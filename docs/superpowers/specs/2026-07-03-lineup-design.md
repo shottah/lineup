@@ -151,7 +151,7 @@ lineup/
 
 - **API pipeline:** Cloud Build trigger on `main` pushes touching `api/**` → `go test` → build image → Artifact Registry → Cloud Deploy release → promote to Cloud Run `prod` target (staging target addable later).
 - **Frontend:** App Hosting backend connected to the GitHub repo; auto-builds `web/` on push to `main`.
-- **Database VM:** e2-micro (us-central1, always-free tier), Debian 12 + Postgres 16, internal IP only, SSH via IAP tunnel, firewall allowing 5432 from the VPC subnet only. Cloud Run reaches it via Direct VPC egress (free). The VM has no standing external IP; for OS updates, a short-lived external IP is attached during maintenance and removed after (scripted in `infra/`), keeping standing cost at $0 and Postgres never publicly exposed.
+- **Database VM:** e2-micro (us-central1, always-free tier), Debian 12 + Postgres 16, internal IP only, SSH via IAP tunnel, firewall allowing 5432 from the VPC subnet only. Cloud Run reaches it via Direct VPC egress (free). The VM has no external IP, ever (org policy `compute.vmExternalIpAccess` denies them); for OS updates and package installs, a temporary Cloud NAT gateway is created during maintenance and torn down after (scripted in `infra/`), keeping standing cost at $0 and Postgres never publicly exposed.
 - **Backups:** nightly cron `pg_dump` → GCS bucket (within 5 GB free tier), 14-day retention. VM setup is an idempotent script in `infra/` — the box is rebuildable from scratch + latest dump.
 - **Secrets:** Secret Manager (DB password, TMDB API key — TVMaze needs none), mounted into Cloud Run.
 - **CI:** GitHub Actions on PRs (free for public repos): `go vet`/`go test`, Next.js lint + build. Cloud Build is deploy-only.
