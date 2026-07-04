@@ -9,8 +9,7 @@
 # attaches/detaches a TEMPORARY Cloud Router + Cloud NAT — same purpose
 # (temporary egress for apt), and strictly tighter security: the VM never
 # gets a publicly-addressable IP at all, and there is zero standing cost
-# once detached. Resource names are shared with create-vm.sh's bootstrap
-# NAT, so either script can clean up after the other.
+# once detached.
 #
 # Usage:
 #   infra/db/maintenance-ip.sh attach [PROJECT_ID]
@@ -20,8 +19,14 @@ set -euo pipefail
 ACTION="${1:?usage: maintenance-ip.sh attach|detach [PROJECT_ID]}"
 PROJECT_ID="${2:-lineup-app-ae6b}"
 REGION=us-central1
-ROUTER=lineup-db-nat-router   # shared names with create-vm.sh
-NAT=lineup-db-nat
+# Maintenance-only NAT names, deliberately DISTINCT from create-vm.sh's
+# bootstrap NAT (lineup-db-nat-bootstrap-*). create-vm.sh auto-deletes
+# anything matching its own names as leftover bootstrap debris; keeping the
+# maintenance NAT under different names guarantees a create-vm.sh re-run can
+# never tear down an operator's egress mid-upgrade. This script only ever
+# creates/deletes the -maint- pair.
+ROUTER=lineup-db-nat-maint-router
+NAT=lineup-db-nat-maint
 
 log() { echo "==> $*"; }
 

@@ -19,6 +19,15 @@ OBJECT="${BUCKET}/lineup-${DATE}.dump"
 
 echo "[lineup-db-backup] $(date -u --iso-8601=seconds) starting dump -> ${OBJECT}"
 
-sudo -u postgres pg_dump -Fc lineup | gcloud storage cp - "${OBJECT}"
+# Two-step dump-then-upload: dumping straight into `gcloud storage cp -` would
+# publish a truncated object at the canonical name if pg_dump died mid-stream
+# (the partial upload lands before pipefail kills the script). Instead, dump
+# to a local temp file first — set -e aborts here if pg_dump fails, so nothing
+# is ever uploaded — and only upload a dump that completed successfully.
+TMP_DUMP="$(mktemp /var/tmp/lineup-backup-XXXXXX.dump)"
+trap 'rm -f "$TMP_DUMP"' EXIT
+
+sudo -u postgres pg_dump -Fc lineup > "$TMP_DUMP"
+gcloud storage cp "$TMP_DUMP" "${OBJECT}"
 
 echo "[lineup-db-backup] $(date -u --iso-8601=seconds) done: ${OBJECT}"

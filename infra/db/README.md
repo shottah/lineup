@@ -40,7 +40,12 @@ repos the first boot needs (PGDG Postgres packages + the Google Cloud CLI).
 So `create-vm.sh`:
 
 1. Creates a **temporary** Cloud Router + Cloud NAT
-   (`lineup-db-nat-router` / `lineup-db-nat`) on the `default` network.
+   (`lineup-db-nat-bootstrap-router` / `lineup-db-nat-bootstrap`) on the
+   `default` network. These names are deliberately distinct from
+   `maintenance-ip.sh`'s (`lineup-db-nat-maint-*`): create-vm.sh auto-deletes
+   anything matching its own bootstrap names as leftover debris, so separate
+   namespaces guarantee a create-vm.sh re-run can never tear down an
+   operator's maintenance NAT mid-upgrade.
 2. Creates the VM with `--no-address`.
 3. Polls (`gcloud compute ssh ... --tunnel-through-iap --command=...`) for a
    sentinel file (`/var/lib/lineup-db-ready`) that `startup-script.sh` writes
@@ -63,8 +68,9 @@ up. On later boots those blocks detect the packages are already installed
 and skip straight to the (network-free, or Google-API-only) steps.
 
 If `create-vm.sh` fails partway through the sentinel wait, it deliberately
-leaves the NAT in place so a re-run can resume; the re-run (or
-`maintenance-ip.sh detach`) cleans it up.
+leaves the bootstrap NAT in place so a re-run can resume; the re-run cleans
+it up once the sentinel appears. (`maintenance-ip.sh detach` does *not*
+touch the bootstrap NAT — it only manages its own `-maint-` pair.)
 
 ## Running it
 
@@ -135,8 +141,9 @@ the existing `lineup-db` is gone or corrupted):
 1. **Re-provision the VM.** Run `create-vm.sh` again — it creates a new
    `lineup-db` with Postgres 16, an empty `lineup` role/database, and the
    backup cron job, exactly as before. (If the old VM still exists and you
-   just want to restore onto it, skip this step and go straight to step 2 —
-   `dropdb`/`createdb` there first, see the note at the end.)
+   just want to restore onto it — e.g. rolling back after a bad migration —
+   skip this step and go straight to step 2; no other preparation is needed,
+   the `--clean --if-exists` flags in step 4 handle the existing objects.)
 
 2. **Get a shell on the VM** (IAP SSH; no external IP needed for this):
 
@@ -152,16 +159,16 @@ the existing `lineup-db` is gone or corrupted):
    gcloud storage cp gs://lineup-app-ae6b-db-backups/lineup-2026-07-03.dump /tmp/restore.dump
    ```
 
-4. **Restore it.** `pg_restore` needs an empty target database (it doesn't
-   create the database itself, just objects+data inside one):
+4. **Restore it.** The same command works for both scenarios — a freshly
+   provisioned empty `lineup` database or an existing one being rolled back:
 
    ```bash
    sudo -u postgres pg_restore -d lineup --clean --if-exists --no-owner /tmp/restore.dump
    ```
 
-   - `--clean --if-exists` drops existing objects first, so this is also the
-     command to use to restore *onto the existing* `lineup-db` VM (e.g. to
-     roll back after a bad migration) — no need to `dropdb`/`createdb` first.
+   - `--clean --if-exists` drops each object before recreating it (and skips
+     the drop harmlessly when the object doesn't exist yet), so no
+     `dropdb`/`createdb` or any other preparation is ever needed.
    - `--no-owner` avoids failing on role-ownership statements if you ever
      restore into a database owned by a different role name.
 

@@ -22,8 +22,13 @@ VM_NAME=lineup-db
 SA_EMAIL="api-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 BUCKET="gs://${PROJECT_ID}-db-backups"
 SENTINEL=/var/lib/lineup-db-ready
-ROUTER=lineup-db-nat-router   # shared names with maintenance-ip.sh
-NAT=lineup-db-nat
+# Bootstrap-only NAT names, deliberately DISTINCT from maintenance-ip.sh's
+# (lineup-db-nat-maint-*). This script deletes any NAT/router matching its
+# own names on the assumption they are leftover bootstrap debris, so it must
+# never share names with the operator's maintenance NAT — otherwise a re-run
+# during a maintenance window would kill egress mid-upgrade.
+ROUTER=lineup-db-nat-bootstrap-router
+NAT=lineup-db-nat-bootstrap
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() { echo "==> $*"; }
