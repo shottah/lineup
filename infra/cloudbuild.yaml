@@ -1,0 +1,16 @@
+steps:
+  - name: golang:1.23
+    dir: api
+    entrypoint: bash
+    args: ['-c', 'go vet ./... && go test ./...']
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/api/api:$SHORT_SHA', 'api']
+  - name: gcr.io/cloud-builders/docker
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/api/api:$SHORT_SHA']
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args: ['deploy', 'releases', 'create', 'rel-$SHORT_SHA',
+           '--delivery-pipeline=lineup-api', '--region=us-central1',
+           '--skaffold-file=infra/skaffold.yaml',
+           '--images=api-image=us-central1-docker.pkg.dev/$PROJECT_ID/api/api:$SHORT_SHA']
+options: { logging: CLOUD_LOGGING_ONLY }

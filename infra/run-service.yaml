@@ -1,0 +1,34 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: lineup-api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/network-interfaces: '[{"network":"default","subnetwork":"default"}]'
+        run.googleapis.com/vpc-access-egress: "private-ranges-only"
+    spec:
+      serviceAccountName: api-runtime@lineup-app-ae6b.iam.gserviceaccount.com
+      containers:
+        - image: api-image
+          ports:
+            - containerPort: 8080
+          env:
+            - name: FIREBASE_PROJECT_ID
+              value: "lineup-app-ae6b"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: database-url
+                  key: "latest"
+            - name: TMDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tmdb-api-key
+                  key: "latest"
+  traffic:
+    - percent: 100
+      latestRevision: true
