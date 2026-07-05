@@ -14,7 +14,6 @@ REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/shottah/lineup.git}"
 TRIGGER_NAME="${TRIGGER_NAME:-api-deploy}"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
-CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 CLOUDBUILD_P4SA="service-${PROJECT_NUMBER}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
 COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 RUNTIME_SA="api-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -27,20 +26,40 @@ gcloud beta services identity create --service=clouddeploy.googleapis.com \
   --project="$PROJECT_ID" >/dev/null
 
 echo "== 2. IAM grants: build/deploy chain =="
-# Cloud Build's default SA builds+pushes the image (infra/cloudbuild.yaml docker
-# steps) and then creates the Cloud Deploy release.
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CLOUDBUILD_SA}" --role=roles/artifactregistry.writer -q >/dev/null
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CLOUDBUILD_SA}" --role=roles/clouddeploy.releaser -q >/dev/null
+# In this project the default Cloud Build service account IS the default Compute
+# Engine SA (new-project Cloud Build behavior; confirmed via
+# `gcloud builds get-default-service-account`), and infra/clouddeploy.yaml's
+# `prod` Target sets no custom executionConfigs, so Cloud Deploy render/deploy
+# jobs also run as the compute SA. All build/deploy-chain roles therefore land on
+# the one compute SA (which has no default Editor grant in this org):
+#
+#   - cloudbuild.builds.builder : run builds (staged-source access, build logs,
+#                                 workspace bucket)
+#   - artifactregistry.writer   : push us-central1-docker.pkg.dev/<project>/api
+#   - clouddeploy.releaser      : `gcloud deploy releases create` in the last
+#                                 cloudbuild.yaml step
+#   - clouddeploy.jobRunner     : execute Cloud Deploy render/deploy jobs
+#                                 (artifact bucket access + job logs)
+#   - run.admin                 : create/update the lineup-api Cloud Run service.
+#                                 The plan named run.developer, but deploying a
+#                                 manifest carrying run.googleapis.com/invoker-iam-disabled
+#                                 requires run.services.setIamPolicy (Cloud Run
+#                                 rejects the deploy otherwise: "Changes to
+#                                 invoker_iam_disabled require run.services.setIamPolicy
+#                                 permissions"), and only run.admin carries it.
+for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer \
+            roles/clouddeploy.releaser roles/clouddeploy.jobRunner roles/run.admin; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${COMPUTE_SA}" --role="$role" -q >/dev/null
+done
 
-# infra/clouddeploy.yaml's `prod` Target sets no custom executionConfigs, so Cloud
-# Deploy renders/deploys using the project's default Compute Engine SA. That SA is
-# the one that actually calls the Cloud Run API and must be able to run the
-# resulting revision as api-runtime.
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${COMPUTE_SA}" --role=roles/run.developer -q >/dev/null
+# Deploying a revision that runs as api-runtime requires actAs on api-runtime;
+# creating a release requires actAs on the target's execution SA (the compute SA
+# itself -- self-actAs is still an IAM check).
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
+  --member="serviceAccount:${COMPUTE_SA}" --role=roles/iam.serviceAccountUser \
+  --project="$PROJECT_ID" -q >/dev/null
+gcloud iam service-accounts add-iam-policy-binding "$COMPUTE_SA" \
   --member="serviceAccount:${COMPUTE_SA}" --role=roles/iam.serviceAccountUser \
   --project="$PROJECT_ID" -q >/dev/null
 

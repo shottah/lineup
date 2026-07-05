@@ -2,6 +2,14 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: lineup-api
+  annotations:
+    # Public API without an allUsers IAM binding: the org enforces domain-
+    # restricted sharing (iam.allowedPolicyMemberDomains), which rejects
+    # allUsers run.invoker grants. Disabling the invoker IAM check is the
+    # org-policy-compliant way to allow unauthenticated invocations
+    # (run.managed.requireInvokerIam is not enforced). App-level auth is
+    # Firebase ID tokens (task 8).
+    run.googleapis.com/invoker-iam-disabled: "true"
 spec:
   template:
     metadata:

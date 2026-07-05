@@ -39,7 +39,47 @@ bash infra/bootstrap.sh lineup-app-ae6b <BILLING_ACCOUNT_ID>
 
 The script is idempotent: every resource-creation step first checks whether the resource exists and skips creation if so. Re-running it after a successful run produces the same "Bootstrap complete" output with no errors.
 
+## Deploy pipeline (Cloud Build -> Artifact Registry -> Cloud Deploy -> Cloud Run)
+
+Files: `cloudbuild.yaml` (test, build, push, create release), `clouddeploy.yaml`
+(DeliveryPipeline `lineup-api` -> Target `prod`), `skaffold.yaml` +
+`run-service.yaml` (Cloud Run service manifest rendered by the Cloud Run
+skaffold deployer), `create-trigger.sh` (idempotent IAM grants, `database-url`
+secret, GitHub connection + trigger).
+
+One-time setup (idempotent, safe to re-run):
+
+```bash
+gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project lineup-app-ae6b
+bash infra/create-trigger.sh
+```
+
+`create-trigger.sh` creates the `database-url` secret from `db-password` and the
+`lineup-db` VM internal IP without ever printing the password (the secret value
+is piped straight between gcloud invocations). If the 2nd-gen GitHub connection
+is not yet authorized, the script prints the one-time console OAuth/App-install
+URL and stops before trigger creation; complete that step in a browser and
+re-run the script.
+
+Manual pipeline run (e.g. before the trigger exists — `$SHORT_SHA` is only
+populated by triggered builds):
+
+```bash
+gcloud builds submit --config=infra/cloudbuild.yaml \
+  --substitutions=SHORT_SHA=$(git rev-parse --short HEAD) --project lineup-app-ae6b .
+```
+
+The service is public via `run.googleapis.com/invoker-iam-disabled` (the org's
+domain-restricted-sharing policy forbids `allUsers` IAM bindings); application
+auth is Firebase ID tokens, added in a later task.
+
 ## Manual steps checklist
+
+- [ ] **Complete the GitHub connection OAuth grant** (one-time, in a browser,
+  as a github.com/shottah admin), then re-run `bash infra/create-trigger.sh` to
+  create the `api-deploy` trigger. The URL is printed by the script
+  (`gcloud builds connections describe lineup-github --region=us-central1`
+  shows it under `installationState.actionUri`).
 
 - [ ] **Replace the placeholder TMDB API key** with the real value:
 
