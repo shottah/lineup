@@ -1,0 +1,9 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: lineup-api
+manifests:
+  rawYaml:
+    - run-service.yaml
+deploy:
+  cloudrun: {}

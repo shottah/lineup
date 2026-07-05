@@ -1,0 +1,16 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: lineup-api
+description: Deployment pipeline for the Lineup API (Cloud Run)
+serialPipeline:
+  stages:
+    - targetId: prod
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: prod
+description: Cloud Run production target for the Lineup API
+run:
+  location: projects/lineup-app-ae6b/locations/us-central1
