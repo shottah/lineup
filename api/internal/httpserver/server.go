@@ -6,9 +6,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/shottah/lineup/api/internal/store"
 )
 
-type Deps struct{}
+type Deps struct {
+	Store *store.Store
+}
 
 func New(d Deps) *http.Server {
 	r := chi.NewRouter()

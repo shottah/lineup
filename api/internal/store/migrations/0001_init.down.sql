@@ -1,0 +1,9 @@
+DROP TABLE guide_items;
+DROP TABLE guides;
+DROP TABLE user_titles;
+DROP TABLE title_providers;
+DROP TABLE title_airings;
+DROP TABLE title_seasons;
+DROP TABLE titles;
+DROP TABLE providers;
+DROP TABLE users;
