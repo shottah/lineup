@@ -1,0 +1,35 @@
+[
+  {
+    "id": 4952,
+    "url": "https://www.tvmaze.com/episodes/4952/example",
+    "name": "Winter Is Coming",
+    "season": 1,
+    "number": 1,
+    "type": "regular",
+    "airdate": "2011-04-17",
+    "airtime": "21:00",
+    "airstamp": "2011-04-18T01:00:00+00:00",
+    "runtime": 60,
+    "rating": { "average": 8.0 },
+    "summary": "<p>Example summary.</p>"
+  },
+  {
+    "id": 4953,
+    "name": "The Kingsroad",
+    "season": 1,
+    "number": 2,
+    "type": "regular",
+    "airdate": "",
+    "airtime": "",
+    "runtime": 60
+  },
+  {
+    "id": 4954,
+    "name": "Unscheduled Special",
+    "season": 2,
+    "number": 1,
+    "type": "regular",
+    "airdate": null,
+    "runtime": null
+  }
+]
