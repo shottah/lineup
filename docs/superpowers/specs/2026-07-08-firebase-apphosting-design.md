@@ -6,9 +6,15 @@ Issue: [#6 feat(infra): firebase auth and app hosting](https://github.com/shotta
 
 ## Context
 
-The GCP project `lineup-app-ae6b` was soft-deleted on 2026-07-05 (over what turned
-out to be a misread symptom: the API's correct 404 on `/`, a route it does not
-register) and restored on 2026-07-08. At the time of writing, Google's data
+The GCP project `lineup-app-ae6b` was soft-deleted on 2026-07-05 after a
+diagnosed Google-side, project-scoped edge wedge: TCP URL-map propagation was
+broken for the project's Cloud Run hostnames (curl failed even from Cloud
+Shell while Chrome reached containers via HTTP/3), deemed unfixable
+client-side — see `.superpowers/sdd/progress.md`. The project was restored on
+2026-07-08; whether the delete/restore cycle cleared the wedge is UNPROVEN at
+the time of writing. If the wedge survived, the fallback is the ledger's
+re-pave checklist (new project ID), which changes every project-ID reference
+in these artifacts. At the time of writing, Google's data
 planes are still propagating the restore (Artifact Registry pulls fail with
 "project has been deleted"; the Cloud Run edge serves generic 404s; the
 `lineup-db` boot disk is `RESTORING`). Two background watchers track this.

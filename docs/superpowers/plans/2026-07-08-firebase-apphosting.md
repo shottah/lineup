@@ -133,6 +133,15 @@ gcloud compute disks describe lineup-db --zone=us-central1-a --project=lineup-ap
 
 Any failure = still propagating; wait and re-run. Do not proceed partially.
 
+TCP-wedge caveat (see `.superpowers/sdd/progress.md`, 2026-07-05 diagnosis):
+this project previously had a Google-side fault where run.app hostnames were
+unreachable over TCP (curl) while fine over HTTP/3 (Chrome). If the curl
+check above still fails long after the other two pass, ALSO test the same
+URL in Chrome. Chrome-200-but-curl-404 means the wedge survived the
+delete/restore cycle: STOP — the project needs the re-pave path (ledger's
+checklist, new project ID), and this runbook's project IDs must be
+retargeted before use.
+
 ## 1. Add the project to Firebase (IRREVERSIBLE)
 
 Enabling `firebase.googleapis.com` (done by bootstrap.sh) does NOT do this;
