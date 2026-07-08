@@ -141,6 +141,8 @@ func Generate(in Input) []Item {
 	e.passKeep(in.Keep)
 	e.passAirPins()
 	e.passMovies()
+	e.passFill()
+	e.passAlternates()
 
 	sort.Slice(e.out, func(i, j int) bool {
 		a, b := e.out[i], e.out[j]
@@ -292,4 +294,159 @@ func (e *engine) passMovies() {
 		ds := cands[e.rng.Intn(len(cands))]
 		e.place(ds, t, 0, 0, e.pickProvider(t, ds), false)
 	}
+}
+
+// nextEpisode returns t's next unplaced episode from its pointer, wrapping
+// seasons via SeasonEpisodes; ok=false when exhausted. Never mutates state.
+func (e *engine) nextEpisode(t *Title) (epKey, bool) {
+	s, ep := t.Pointer.Season, t.Pointer.Episode
+	if s < 1 {
+		s = 1
+	}
+	if ep < 1 {
+		ep = 1
+	}
+	for {
+		cnt, ok := t.SeasonEpisodes[s]
+		if !ok {
+			return epKey{}, false
+		}
+		if ep > cnt {
+			s, ep = s+1, 1
+			continue
+		}
+		k := epKey{s, ep}
+		if !e.placedEps[t.ID][k] {
+			return k, true
+		}
+		ep++
+	}
+}
+
+// schedulable applies the airing rule: airing titles only schedule
+// episodes whose air date is known and on/before the target date.
+func (e *engine) schedulable(t *Title, k epKey, date string) bool {
+	if !t.Airing {
+		return true
+	}
+	d, ok := e.air[t.ID][k]
+	return ok && d <= date
+}
+
+// passFill greedily fills remaining capacity day by day using the fixed
+// scoring weights (fairness -2/placement, variety -3, cohesion +2).
+func (e *engine) passFill() {
+	for di, ds := range e.days {
+		if !ds.enabled() {
+			continue
+		}
+		prevDate := ""
+		if di > 0 {
+			prevDate = e.days[di-1].date
+		}
+		for {
+			type cand struct {
+				t *Title
+				k epKey
+			}
+			best := -1 << 30
+			var ties []cand
+			for i := range e.titles {
+				t := &e.titles[i]
+				if t.Kind != "series" || len(t.Providers) == 0 || ds.series[t.ID] || ds.remaining() < t.Runtime {
+					continue
+				}
+				k, ok := e.nextEpisode(t)
+				if !ok || !e.schedulable(t, k, ds.date) {
+					continue
+				}
+				score := -2 * e.placedCount[t.ID]
+				if prevDate != "" && e.lastPlaced[t.ID] == prevDate {
+					score -= 3
+				}
+				for _, p := range t.Providers {
+					if ds.providers[p] {
+						score += 2
+						break
+					}
+				}
+				switch {
+				case score > best:
+					best, ties = score, []cand{{t, k}}
+				case score == best:
+					ties = append(ties, cand{t, k})
+				}
+			}
+			if len(ties) == 0 {
+				break
+			}
+			c := ties[e.rng.Intn(len(ties))]
+			e.place(ds, c.t, c.k.season, c.k.episode, e.pickProvider(c.t, ds), false)
+		}
+	}
+}
+
+// passAlternates appends up to 3 provider-diverse alternates per plan slot.
+// Reads pointer state without mutating it.
+func (e *engine) passAlternates() {
+	planIdx := make([]int, 0, len(e.out))
+	for i := range e.out {
+		if e.out[i].IsPlan {
+			planIdx = append(planIdx, i)
+		}
+	}
+	sort.Slice(planIdx, func(a, b int) bool {
+		x, y := e.out[planIdx[a]], e.out[planIdx[b]]
+		if x.Date != y.Date {
+			return x.Date < y.Date
+		}
+		return x.StartMin < y.StartMin
+	})
+
+	var alts []Item
+	for _, pi := range planIdx {
+		p := e.out[pi]
+		ds := e.dayByDate[p.Date]
+		if ds == nil {
+			continue
+		}
+		limit := ds.window.EndMin - p.StartMin
+		var prefer, rest []Item
+		for i := range e.titles {
+			t := &e.titles[i]
+			if t.ID == p.TitleID || len(t.Providers) == 0 || t.Runtime > limit || ds.series[t.ID] {
+				continue
+			}
+			season, episode := 0, 0
+			if t.Kind == "series" {
+				k, ok := e.nextEpisode(t)
+				if !ok || !e.schedulable(t, k, p.Date) {
+					continue
+				}
+				season, episode = k.season, k.episode
+			} else if e.moviePlaced[t.ID] {
+				continue
+			}
+			prov := t.Providers[0]
+			for _, pr := range t.Providers {
+				if pr != p.Provider {
+					prov = pr
+					break
+				}
+			}
+			alt := Item{Date: p.Date, StartMin: p.StartMin, EndMin: p.StartMin + t.Runtime,
+				TitleID: t.ID, Season: season, Episode: episode, Provider: prov, IsPlan: false}
+			if prov != p.Provider {
+				prefer = append(prefer, alt)
+			} else {
+				rest = append(rest, alt)
+			}
+		}
+		slot := append(prefer, rest...)
+		if len(slot) > 3 {
+			slot = slot[:3]
+		}
+		alts = append(alts, slot...)
+	}
+	e.out = append(e.out, alts...)
 }
