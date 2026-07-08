@@ -139,8 +139,10 @@ read-only verification. Steps are independently re-runnable.
   hero text + a browser check). The landing page has no runtime Firebase
   dependency (auth flow is issue #15), so acceptance proves the hosting
   pipeline, not auth.
-- Local check before merge: `npm run build` in `web/` passes with the real
-  config values.
+- Local check before merge: `pnpm run build` in `web/` passes with the real
+  config values. (`web/` uses pnpm — App Hosting detects it via
+  `pnpm-lock.yaml`; bun was ruled out because App Hosting's buildpacks only
+  support npm/yarn/pnpm.)
 
 ## Rollback and failure handling
 
