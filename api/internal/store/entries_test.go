@@ -31,9 +31,9 @@ func seedUser(t *testing.T, s *Store) int64 {
 	return u.ID
 }
 
-func strp(s string) *string    { return &s }
-func f64p(f float64) *float64  { return &f }
-func boolp(b bool) *bool       { return &b }
+func strp(s string) *string   { return &s }
+func f64p(f float64) *float64 { return &f }
+func boolp(b bool) *bool      { return &b }
 
 func TestUpsertEntryLifecycle(t *testing.T) {
 	s := testStore(t)

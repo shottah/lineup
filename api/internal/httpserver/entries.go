@@ -78,6 +78,10 @@ func handlePatchEntry(entries EntryStore) http.HandlerFunc {
 		}
 
 		user := userFrom(r.Context())
+		// Cap check runs before the upsert (which is where unknown title
+		// ids surface as 404), so an unknown title at cap answers 409, not
+		// 404 — a deliberate tradeoff of the not-pre-queried design; see
+		// the issue #12 design spec.
 		if body.Status != nil && *body.Status == "rotation" {
 			n, cerr := entries.CountRotation(r.Context(), user.ID, titleID)
 			if cerr != nil {
