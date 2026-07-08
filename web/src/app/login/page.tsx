@@ -27,11 +27,11 @@ export default function LoginPage() {
         <button
           disabled={busy}
           onClick={async () => {
+            // busy stays true on success: the effect below navigates once the auth context updates, and re-enabling would invite double-submits
             setBusy(true);
             setError(null);
             try {
               await signInWithGoogle();
-              router.replace("/guide");
             } catch {
               setError("Sign-in failed. Try again.");
               setBusy(false);
