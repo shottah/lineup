@@ -83,3 +83,67 @@ func TestEpisodes(t *testing.T) {
 		t.Fatalf("eps[2] = %+v", eps[2])
 	}
 }
+
+func TestRetryOn429ThenSuccess(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "lookup_show.json"))
+	}))
+	defer srv.Close()
+
+	show, err := NewWithBaseURL(srv.URL).LookupByIMDB(context.Background(), "tt0944947")
+	if err != nil {
+		t.Fatalf("LookupByIMDB after 429: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (exactly one retry)", calls)
+	}
+	if show.ID != 82 {
+		t.Fatalf("show = %+v", show)
+	}
+}
+
+func TestNoSecondRetryOn500(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err := NewWithBaseURL(srv.URL).LookupByIMDB(context.Background(), "tt0944947")
+	if err == nil {
+		t.Fatal("want error after repeated 500s")
+	}
+	if errors.Is(err, ErrNotFound) {
+		t.Fatal("500 must not map to ErrNotFound")
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want exactly 2 (one retry, then give up)", calls)
+	}
+}
+
+func TestNotFoundDoesNotRetry(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := NewWithBaseURL(srv.URL).LookupByIMDB(context.Background(), "tt0000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (404 never retries)", calls)
+	}
+}

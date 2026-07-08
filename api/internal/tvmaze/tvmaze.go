@@ -75,32 +75,53 @@ func (c *Client) LookupByIMDB(ctx context.Context, imdbID string) (Show, error) 
 	return s, nil
 }
 
-// get performs one rate-limited GET, decoding a 200 JSON body into out.
-// 404 maps to ErrNotFound. (Retry on 429/5xx lands in a later task.)
+// get performs a rate-limited GET with a single retry on 429/5xx
+// (honoring Retry-After seconds, else 500ms), decoding a 200 JSON body
+// into out. 404 maps to ErrNotFound and never retries.
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	if err := c.limiter.Wait(ctx); err != nil {
-		return fmt.Errorf("tvmaze: rate limit wait: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return fmt.Errorf("tvmaze: new request: %w", err)
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("tvmaze: %s: %w", path, err)
-	}
-	defer res.Body.Close()
+	const maxAttempts = 2
+	for attempt := 1; ; attempt++ {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return fmt.Errorf("tvmaze: rate limit wait: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+		if err != nil {
+			return fmt.Errorf("tvmaze: new request: %w", err)
+		}
+		res, err := c.http.Do(req)
+		if err != nil {
+			return fmt.Errorf("tvmaze: %s: %w", path, err)
+		}
 
-	switch {
-	case res.StatusCode == http.StatusNotFound:
-		return ErrNotFound
-	case res.StatusCode != http.StatusOK:
-		return fmt.Errorf("tvmaze: %s: unexpected status %d", path, res.StatusCode)
+		retryable := res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500
+		if retryable && attempt < maxAttempts {
+			delay := 500 * time.Millisecond
+			if s := res.Header.Get("Retry-After"); s != "" {
+				if secs, perr := strconv.Atoi(s); perr == nil && secs >= 0 {
+					delay = time.Duration(secs) * time.Second
+				}
+			}
+			res.Body.Close()
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("tvmaze: %s: %w", path, ctx.Err())
+			case <-time.After(delay):
+			}
+			continue
+		}
+
+		defer res.Body.Close()
+		switch {
+		case res.StatusCode == http.StatusNotFound:
+			return ErrNotFound
+		case res.StatusCode != http.StatusOK:
+			return fmt.Errorf("tvmaze: %s: unexpected status %d", path, res.StatusCode)
+		}
+		if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+			return fmt.Errorf("tvmaze: %s: decode: %w", path, err)
+		}
+		return nil
 	}
-	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
-		return fmt.Errorf("tvmaze: %s: decode: %w", path, err)
-	}
-	return nil
 }
 
 // Episodes lists every episode TVMaze knows for a show, including
