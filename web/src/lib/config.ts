@@ -8,7 +8,8 @@ type AppConfig = {
   firebase: { apiKey: string; authDomain: string; projectId: string };
   apiUrl: string;
   /** Auth emulator origin. Present only in development; its absence keeps
-   *  emulator wiring out of production bundles. */
+   *  the emulator connection from ever executing in production builds (the
+   *  code still ships in the bundle — only execution is gated). */
   authEmulatorHost?: string;
   appleAuth: boolean;
 };
