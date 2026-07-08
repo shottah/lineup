@@ -54,7 +54,8 @@ func TestUpsertUserByFirebaseUID(t *testing.T) {
 	}
 
 	// Second upsert: same uid, changed email, empty display name (must keep old).
-	u2, err := s.UpsertUserByFirebaseUID(ctx, uid, "b@example.com", "", defaults)
+	conflictDefaults := json.RawMessage(`{"windows":{"changed":true}}`)
+	u2, err := s.UpsertUserByFirebaseUID(ctx, uid, "b@example.com", "", conflictDefaults)
 	if err != nil {
 		t.Fatalf("update upsert: %v", err)
 	}
@@ -63,6 +64,9 @@ func TestUpsertUserByFirebaseUID(t *testing.T) {
 	}
 	if u2.Email != "b@example.com" || u2.DisplayName != "Ada" {
 		t.Fatalf("update upsert = %+v, want email updated, display name kept", u2)
+	}
+	if strings.Contains(string(u2.SchedulePrefs), "changed") {
+		t.Fatalf("conflict update overwrote schedule_prefs: %s", u2.SchedulePrefs)
 	}
 }
 
@@ -91,5 +95,25 @@ func TestUpdateUserPrefs(t *testing.T) {
 	}
 	if u3.Region != "GB" || !strings.Contains(string(u3.SchedulePrefs), `"09:00"`) {
 		t.Fatalf("no-op update changed row: %+v", u3)
+	}
+
+	// region-only update leaves prefs untouched.
+	region2 := "US"
+	u4, err := s.UpdateUserPrefs(ctx, u.ID, &region2, nil)
+	if err != nil {
+		t.Fatalf("region-only update: %v", err)
+	}
+	if u4.Region != "US" || !strings.Contains(string(u4.SchedulePrefs), `"09:00"`) {
+		t.Fatalf("region-only update wrong: %+v", u4)
+	}
+
+	// prefs-only update leaves region untouched.
+	prefs2 := json.RawMessage(`{"windows":{"tue":{"enabled":true,"start":"20:00","end":"21:00"}}}`)
+	u5, err := s.UpdateUserPrefs(ctx, u.ID, nil, prefs2)
+	if err != nil {
+		t.Fatalf("prefs-only update: %v", err)
+	}
+	if u5.Region != "US" || !strings.Contains(string(u5.SchedulePrefs), `"20:00"`) {
+		t.Fatalf("prefs-only update wrong: %+v", u5)
 	}
 }
