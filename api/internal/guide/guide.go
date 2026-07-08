@@ -65,14 +65,22 @@ type Item struct {
 	IsPlan   bool
 	Pinned   bool
 	Edited   bool
+	// Watched passes through keeps untouched, so issue #14 can round-trip
+	// guide_items rows without re-joining; place() never sets it.
+	Watched bool
 }
 
 // Input is everything Generate needs; callers hydrate it from the store.
 type Input struct {
-	Seed   int64
+	Seed int64
+	// Days must have unique Date values; duplicates collapse in the
+	// internal per-date index (dayByDate), so only one survives.
 	Days   []Day
 	Titles []Title
-	Keep   []Item
+	// Keep is expected to hold plan items (IsPlan true). Non-plan keeps
+	// pass through verbatim but consume no capacity and are invisible to
+	// the alternates cap.
+	Keep []Item
 }
 
 type epKey struct{ season, episode int }
@@ -98,7 +106,6 @@ type engine struct {
 	dayByDate   map[string]*dayState
 	placedEps   map[int64]map[epKey]bool
 	placedCount map[int64]int
-	lastPlaced  map[int64]string
 	moviePlaced map[int64]bool
 	out         []Item
 }
@@ -113,7 +120,6 @@ func Generate(in Input) []Item {
 		dayByDate:   map[string]*dayState{},
 		placedEps:   map[int64]map[epKey]bool{},
 		placedCount: map[int64]int{},
-		lastPlaced:  map[int64]string{},
 		moviePlaced: map[int64]bool{},
 	}
 
@@ -187,7 +193,6 @@ func (e *engine) place(ds *dayState, t *Title, season, episode int, provider int
 		e.moviePlaced[t.ID] = true
 	}
 	e.placedCount[t.ID]++
-	e.lastPlaced[t.ID] = ds.date
 }
 
 // pickProvider prefers a provider already on tonight's plan, else the
@@ -230,9 +235,6 @@ func (e *engine) passKeep(keep []Item) {
 			e.moviePlaced[k.TitleID] = true
 		}
 		e.placedCount[k.TitleID]++
-		if prev, ok := e.lastPlaced[k.TitleID]; !ok || k.Date > prev {
-			e.lastPlaced[k.TitleID] = k.Date
-		}
 	}
 }
 
@@ -351,10 +353,6 @@ func (e *engine) passFill() {
 		if !ds.enabled() {
 			continue
 		}
-		prevDate := ""
-		if di > 0 {
-			prevDate = e.days[di-1].date
-		}
 		for {
 			best := -1 << 30
 			var ties []cand
@@ -368,7 +366,7 @@ func (e *engine) passFill() {
 					continue
 				}
 				score := -2 * e.placedCount[t.ID]
-				if prevDate != "" && e.lastPlaced[t.ID] == prevDate {
+				if di > 0 && e.days[di-1].series[t.ID] {
 					score -= 3
 				}
 				for _, p := range t.Providers {

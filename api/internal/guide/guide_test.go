@@ -2,6 +2,7 @@
 package guide
 
 import (
+	"math/rand"
 	"reflect"
 	"testing"
 )
@@ -318,5 +319,120 @@ func TestGenerateDoesNotMutateInput(t *testing.T) {
 	}
 	if !reflect.DeepEqual(seasons, map[int]int{1: 10}) {
 		t.Fatalf("caller SeasonEpisodes mutated: %v", seasons)
+	}
+}
+
+// ---- Task 3 tests (final-review fixes) ----
+
+// permInput is a mixed fixture (airing series, plain series, movies, a
+// keep) sized to exercise sort-order sensitivity in every pass.
+func permInput() Input {
+	mk := func(id int64, rt int, provs ...int64) Title {
+		return Title{ID: id, Kind: "series", Runtime: rt, Providers: provs,
+			Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 8, 2: 8}}
+	}
+	air := mk(5, 60, 3, 1)
+	air.Airing = true
+	air.AirDates = []AiredEpisode{
+		{1, 1, "2026-01-02"}, {1, 2, "2026-01-06"}, {1, 3, "2026-01-08"}, {1, 4, "2026-01-15"},
+	}
+	dates := []string{"2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-10", "2026-01-11"}
+	days := make([]Day, 0, len(dates))
+	for i, d := range dates {
+		w := evening()
+		if i == 3 {
+			w = Window{} // disabled day mid-range
+		}
+		days = append(days, Day{Date: d, Window: w})
+	}
+	keep := []Item{
+		{Date: "2026-01-06", StartMin: 19 * 60, EndMin: 20 * 60, TitleID: 2, Season: 1, Episode: 1, Provider: 2, IsPlan: true, Pinned: true},
+	}
+	return Input{Seed: 99, Days: days,
+		Titles: []Title{mk(1, 45, 1), mk(2, 60, 2), mk(3, 30, 2, 1), air,
+			{ID: 4, Kind: "movie", Runtime: 130, Providers: []int64{4, 1}},
+			{ID: 6, Kind: "movie", Runtime: 90, Providers: []int64{2}}},
+		Keep: keep}
+}
+
+// TestPermutationInvariance asserts the determinism contract: Generate
+// sorts titles/providers/days internally, so shuffling caller-supplied
+// order must never change the output. Shuffling uses a fixed-seed
+// rand.Rand (not time-seeded), so the test itself stays deterministic.
+func TestPermutationInvariance(t *testing.T) {
+	base := Generate(permInput())
+	r := rand.New(rand.NewSource(7))
+	for trial := 0; trial < 200; trial++ {
+		in := permInput()
+		r.Shuffle(len(in.Titles), func(i, j int) { in.Titles[i], in.Titles[j] = in.Titles[j], in.Titles[i] })
+		r.Shuffle(len(in.Days), func(i, j int) { in.Days[i], in.Days[j] = in.Days[j], in.Days[i] })
+		for k := range in.Titles {
+			p := in.Titles[k].Providers
+			r.Shuffle(len(p), func(i, j int) { p[i], p[j] = p[j], p[i] })
+			a := in.Titles[k].AirDates
+			r.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
+		}
+		got := Generate(in)
+		if !reflect.DeepEqual(base, got) {
+			t.Fatalf("trial %d: permuted input diverged\nbase %v\ngot  %v", trial, base, got)
+		}
+	}
+}
+
+// varietyInput builds two series over 4 days: series 1 is airing with E1
+// and E3 aired before the range (catch-up, fill-schedulable anywhere) and
+// E2 pinned to Fri 01-09. Series 2 is a plain series always eligible. The
+// ground-truth variety penalty (-3 for airing on the previous day's plan,
+// read from the previous dayState's series set rather than a scalar that
+// out-of-chronological writes could clobber) must keep series 1 off Sat
+// once it lands Fri, so series 2 wins that slot outright.
+func varietyInput(seed int64) Input {
+	a := Title{ID: 1, Kind: "series", Runtime: 60, Providers: []int64{1}, Airing: true,
+		Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10},
+		AirDates: []AiredEpisode{{1, 1, "2026-01-05"}, {1, 2, "2026-01-09"}, {1, 3, "2026-01-06"}}}
+	b := Title{ID: 2, Kind: "series", Runtime: 60, Providers: []int64{2},
+		Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10}}
+	days := []Day{
+		{Date: "2026-01-07", Window: Window{19 * 60, 20 * 60}},
+		{Date: "2026-01-08", Window: Window{19 * 60, 21 * 60}},
+		{Date: "2026-01-09", Window: Window{19 * 60, 20 * 60}},
+		{Date: "2026-01-10", Window: Window{19 * 60, 20 * 60}},
+	}
+	return Input{Seed: seed, Days: days, Titles: []Title{a, b}}
+}
+
+// TestVarietyPenaltyConsecutiveNights is the regression for the old
+// scalar per-title last-placement-date tracker: air-pins run before fill,
+// so series 1's Fri pin was an out-of-chronological-order write that used
+// to clobber that scalar back to Thu, letting series 1 tie for (and
+// sometimes win) Sat. Sweeps the same 50 seeds the reviewer's probe swept.
+func TestVarietyPenaltyConsecutiveNights(t *testing.T) {
+	violations := 0
+	var example []Item
+	for seed := int64(0); seed < 50; seed++ {
+		out := Generate(varietyInput(seed))
+		onDay := map[string]map[int64]bool{}
+		for _, it := range out {
+			if !it.IsPlan {
+				continue
+			}
+			if onDay[it.Date] == nil {
+				onDay[it.Date] = map[int64]bool{}
+			}
+			onDay[it.Date][it.TitleID] = true
+		}
+		if onDay["2026-01-09"][1] && onDay["2026-01-10"][1] && !onDay["2026-01-10"][2] {
+			violations++
+			if example == nil {
+				for _, it := range out {
+					if it.IsPlan {
+						example = append(example, it)
+					}
+				}
+			}
+		}
+	}
+	if violations > 0 {
+		t.Fatalf("variety miss in %d/50 seeds: series 1 scheduled Fri(pin)+Sat though correct -3 makes series 2 win outright.\nexample plan: %+v", violations, example)
 	}
 }

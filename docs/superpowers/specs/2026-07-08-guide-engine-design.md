@@ -14,6 +14,18 @@ design spec's Guide Generation Engine section (hard/soft constraints,
 alternates) — and fills the type-level gaps to match the `guide_items`
 schema. Re-derived decisions are marked (†).
 
+Final-review follow-ups (2026-07-08):
+
+- v1's alternates drew candidates from rotation *and* watchlist titles on
+  other services. This engine's `Input` only carries the plan-eligible
+  pool, so alternates can fall back to a same-provider title but cannot
+  express "watchlist-only, not in rotation" candidates — that requires
+  hydrating a separate pool, deferred to issue #14's store hydration work.
+- v1's "longest-window days" rule for movie placement is implemented here
+  as "greatest remaining capacity" rather than raw window length. This is
+  a deliberate refinement (†): a long day that's already loaded up with
+  keeps/pins shouldn't out-rank a shorter day that's still wide open.
+
 ## Shape
 
 `api/internal/guide` — pure package: no store imports, no clock, no I/O,
