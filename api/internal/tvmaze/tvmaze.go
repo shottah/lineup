@@ -103,6 +103,13 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return nil
 }
 
-// strconv is used by Episodes (Task 2); referenced here so the import
-// block stays stable across tasks.
-var _ = strconv.Itoa
+// Episodes lists every episode TVMaze knows for a show, including
+// not-yet-aired ones (blank AirDate).
+func (c *Client) Episodes(ctx context.Context, showID int) ([]Episode, error) {
+	var eps []Episode
+	path := "/shows/" + strconv.Itoa(showID) + "/episodes"
+	if err := c.get(ctx, path, &eps); err != nil {
+		return nil, err
+	}
+	return eps, nil
+}

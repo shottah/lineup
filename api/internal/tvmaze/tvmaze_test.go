@@ -52,3 +52,34 @@ func TestLookupByIMDBNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestEpisodes(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "episodes.json"))
+	}))
+	defer srv.Close()
+
+	eps, err := NewWithBaseURL(srv.URL).Episodes(context.Background(), 82)
+	if err != nil {
+		t.Fatalf("Episodes: %v", err)
+	}
+	if gotPath != "/shows/82/episodes" {
+		t.Fatalf("requested %q, want /shows/82/episodes", gotPath)
+	}
+	if len(eps) != 3 {
+		t.Fatalf("len = %d, want 3", len(eps))
+	}
+	if eps[0].Season != 1 || eps[0].Number != 1 || eps[0].AirDate != "2011-04-17" {
+		t.Fatalf("eps[0] = %+v", eps[0])
+	}
+	// Blank and null air dates both decode to "" without error.
+	if eps[1].AirDate != "" || eps[2].AirDate != "" {
+		t.Fatalf("blank/null airdates = %q, %q; want empty strings", eps[1].AirDate, eps[2].AirDate)
+	}
+	if eps[2].Season != 2 || eps[2].Number != 1 {
+		t.Fatalf("eps[2] = %+v", eps[2])
+	}
+}
