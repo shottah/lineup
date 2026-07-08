@@ -15,6 +15,7 @@ type Deps struct {
 	Store    *store.Store
 	Users    UserStore
 	Verifier fbauth.TokenVerifier
+	Entries  EntryStore
 }
 
 func New(d Deps) *http.Server {
@@ -29,6 +30,10 @@ func New(d Deps) *http.Server {
 			v1.Use(requireAuth(d.Verifier, d.Users))
 			v1.Get("/me", handleGetMe)
 			v1.Patch("/me", handlePatchMe(d.Users))
+			if d.Entries != nil {
+				v1.Patch("/titles/{id}/entry", handlePatchEntry(d.Entries))
+				v1.Get("/me/shelves/{shelf}", handleGetShelf(d.Entries))
+			}
 		})
 	}
 	port := os.Getenv("PORT")
