@@ -21,13 +21,13 @@ const userReturning = `id, firebase_uid, email, display_name, region, schedule_p
 
 // UpsertUserByFirebaseUID inserts the user on first sight (applying
 // defaultPrefs) or refreshes email/display_name on subsequent sign-ins.
-// An empty displayName never overwrites a previously stored one.
+// Empty email or displayName values never overwrite previously stored ones.
 func (s *Store) UpsertUserByFirebaseUID(ctx context.Context, firebaseUID, email, displayName string, defaultPrefs json.RawMessage) (*User, error) {
 	const q = `
 INSERT INTO users (firebase_uid, email, display_name, schedule_prefs)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (firebase_uid) DO UPDATE SET
-  email = EXCLUDED.email,
+  email = CASE WHEN EXCLUDED.email <> '' THEN EXCLUDED.email ELSE users.email END,
   display_name = CASE WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name ELSE users.display_name END,
   updated_at = now()
 RETURNING ` + userReturning

@@ -1,4 +1,3 @@
-// api/internal/httpserver/me_test.go
 package httpserver
 
 import (

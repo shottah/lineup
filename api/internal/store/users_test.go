@@ -68,6 +68,15 @@ func TestUpsertUserByFirebaseUID(t *testing.T) {
 	if strings.Contains(string(u2.SchedulePrefs), "changed") {
 		t.Fatalf("conflict update overwrote schedule_prefs: %s", u2.SchedulePrefs)
 	}
+
+	// Empty email on a later token must not blank the stored email.
+	u3, err := s.UpsertUserByFirebaseUID(ctx, uid, "", "Ada2", conflictDefaults)
+	if err != nil {
+		t.Fatalf("empty-email upsert: %v", err)
+	}
+	if u3.Email != "b@example.com" || u3.DisplayName != "Ada2" {
+		t.Fatalf("empty-email upsert = %+v, want email kept, display name updated", u3)
+	}
 }
 
 func TestUpdateUserPrefs(t *testing.T) {

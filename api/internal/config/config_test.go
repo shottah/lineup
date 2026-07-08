@@ -20,7 +20,7 @@ func TestLoad(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "DATABASE_URL only, other fields default to empty",
+			name: "required vars only, other fields default to empty",
 			env: map[string]string{
 				"DATABASE_URL":        "postgres://localhost/db",
 				"FIREBASE_PROJECT_ID": "proj-id",
