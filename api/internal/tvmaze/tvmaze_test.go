@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 // fixture reads a testdata file or fails the test.
@@ -145,5 +146,31 @@ func TestNotFoundDoesNotRetry(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1 (404 never retries)", calls)
+	}
+}
+
+func TestRetryDefaultDelayWithoutHeader(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable) // no Retry-After header
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "lookup_show.json"))
+	}))
+	defer srv.Close()
+
+	start := time.Now()
+	show, err := NewWithBaseURL(srv.URL).LookupByIMDB(context.Background(), "tt0944947")
+	if err != nil {
+		t.Fatalf("LookupByIMDB after 503: %v", err)
+	}
+	if calls != 2 || show.ID != 82 {
+		t.Fatalf("calls = %d, show = %+v", calls, show)
+	}
+	if elapsed := time.Since(start); elapsed < 500*time.Millisecond {
+		t.Fatalf("retried after %v, want >= 500ms default backoff", elapsed)
 	}
 }

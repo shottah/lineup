@@ -94,9 +94,15 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 
 		retryable := res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500
 		if retryable && attempt < maxAttempts {
+			// Retry-After's HTTP-date form is deliberately unsupported:
+			// non-numeric values fall back to the 500ms default, and the
+			// delay is clamped so a misbehaving server can't stall callers.
 			delay := 500 * time.Millisecond
 			if s := res.Header.Get("Retry-After"); s != "" {
 				if secs, perr := strconv.Atoi(s); perr == nil && secs >= 0 {
+					if secs > 30 {
+						secs = 30
+					}
 					delay = time.Duration(secs) * time.Second
 				}
 			}
