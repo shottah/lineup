@@ -275,7 +275,7 @@ git commit -m "docs(infra): firebase auth + app hosting runbook"
 - [ ] **Step 3:** Run `firebase apps:sdkconfig web --project lineup-app-ae6b` (read-only). Copy `apiKey` into both config blocks; confirm `authDomain`/`projectId` match committed values.
 - [ ] **Step 4: Verify no sentinel remains and build passes**
 
-Run: `git grep -n FILLED_IN_BY_RUNBOOK_STEP_3` → expect no output (exit 1).
+Run: `git grep -n FILLED_IN_BY_RUNBOOK_STEP_3 -- web/` → expect no output (exit 1).
 Run: `cd web && pnpm run build` → expect success.
 
 - [ ] **Step 5: Commit**
@@ -318,7 +318,7 @@ git commit -m "feat(web): real firebase client config values"
 
 - [ ] **Step 1: Pre-PR checks**
 
-Run: `git grep -n FILLED_IN_BY_RUNBOOK_STEP_3` → no output.
+Run: `git grep -n FILLED_IN_BY_RUNBOOK_STEP_3 -- web/` → no output.
 Run: `cd web && pnpm run build && pnpm run lint` → both pass.
 
 - [ ] **Step 2: Push + open PR** titled `feat(infra): firebase auth and app hosting` with body noting: closes #6; the config-object deviation from the issue's `NEXT_PUBLIC_*` env-var deliverable and why; that §4/§6 console steps were completed out-of-band; squash-merge per issue workflow.
