@@ -143,7 +143,7 @@ func Generate(in Input) []Item {
 		e.days = append(e.days, ds)
 		e.dayByDate[d.Date] = ds
 	}
-	sort.Slice(e.days, func(i, j int) bool { return e.days[i].date < e.days[j].date })
+	sort.SliceStable(e.days, func(i, j int) bool { return e.days[i].date < e.days[j].date })
 
 	e.passKeep(in.Keep)
 	e.passAirPins()

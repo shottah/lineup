@@ -304,11 +304,19 @@ func TestAlternates(t *testing.T) {
 
 func TestGenerateDoesNotMutateInput(t *testing.T) {
 	providers := []int64{9, 1, 5}
+	airDates := []AiredEpisode{{Season: 1, Episode: 2, Date: "2026-01-07"}, {Season: 1, Episode: 1, Date: "2026-01-05"}}
+	seasons := map[int]int{1: 10}
 	in := Input{Seed: 2, Days: week(evening(), evening()),
-		Titles: []Title{{ID: 1, Kind: "series", Runtime: 60, Providers: providers,
-			Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10}}}}
+		Titles: []Title{{ID: 1, Kind: "series", Runtime: 60, Providers: providers, Airing: true,
+			Pointer: Pointer{1, 1}, SeasonEpisodes: seasons, AirDates: airDates}}}
 	Generate(in)
 	if !reflect.DeepEqual(providers, []int64{9, 1, 5}) {
 		t.Fatalf("caller Providers mutated: %v", providers)
+	}
+	if !reflect.DeepEqual(airDates, []AiredEpisode{{Season: 1, Episode: 2, Date: "2026-01-07"}, {Season: 1, Episode: 1, Date: "2026-01-05"}}) {
+		t.Fatalf("caller AirDates mutated: %v", airDates)
+	}
+	if !reflect.DeepEqual(seasons, map[int]int{1: 10}) {
+		t.Fatalf("caller SeasonEpisodes mutated: %v", seasons)
 	}
 }
