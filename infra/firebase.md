@@ -63,8 +63,11 @@ firebase apps:sdkconfig web --project lineup-app-ae6b
 
 Copy `apiKey` into BOTH the development and production blocks of
 `web/src/lib/config.ts`, replacing every `FILLED_IN_BY_RUNBOOK_STEP_3`.
-Confirm `authDomain` and `projectId` printed by the command match the values
-already committed there; fix them if Firebase reports different ones.
+Confirm `authDomain` and the PRODUCTION block's `projectId` match what the
+command prints; fix production values if Firebase reports different ones.
+Do NOT "fix" the development block's `projectId: "demo-lineup"` — it is
+deliberate (the Auth emulator only issues tokens for that id; reverting it
+to the real project id breaks all local sign-in with 401s).
 Then: `cd web && pnpm run build` must pass, and
 `git grep -n FILLED_IN_BY_RUNBOOK_STEP_3 -- ':/web'` must return nothing. Commit.
 
@@ -92,6 +95,10 @@ run-pause-grant-rerun pattern as `infra/create-trigger.sh`).
 
 Verify: `firebase apphosting:backends:list --project lineup-app-ae6b` shows
 the backend with repo `shottah/lineup` and branch `main`.
+
+Then add the backend's `*.hosted.app` domain to the API's CORS allowlist
+(`AllowedOrigins` in `api/internal/httpserver/server.go`) and deploy —
+without it, the hosted web app's API calls fail CORS preflight.
 
 ## 6. Harden the web API key (public, not secret)
 
