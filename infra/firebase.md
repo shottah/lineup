@@ -6,7 +6,10 @@ explicit approval. Steps are independently re-runnable. CLI where possible,
 console where genuinely browser-only.
 
 Prerequisites: `firebase` CLI ≥ 15 logged in as the project owner
-(`firebase login`), `gcloud` authed, Docker running with the Artifact Registry credential helper configured (`gcloud auth configure-docker us-central1-docker.pkg.dev`) for the health gate.
+(`firebase login`), `gcloud` authed, Docker running with the Artifact
+Registry credential helper configured
+(`gcloud auth configure-docker us-central1-docker.pkg.dev`) for the
+health gate.
 
 ## 0. Health gate — run before ANY step below
 
@@ -63,7 +66,7 @@ Copy `apiKey` into BOTH the development and production blocks of
 Confirm `authDomain` and `projectId` printed by the command match the values
 already committed there; fix them if Firebase reports different ones.
 Then: `cd web && pnpm run build` must pass, and
-`git grep -n FILLED_IN_BY_RUNBOOK_STEP_3 -- web/` must return nothing. Commit.
+`git grep -n FILLED_IN_BY_RUNBOOK_STEP_3 -- ':/web'` must return nothing. Commit.
 
 ## 4. Enable Google sign-in (console-only, deliberately)
 
