@@ -6,7 +6,7 @@
 
 **Architecture:** `fbauth` package isolates token verification behind a `TokenVerifier` interface (real impl = firebase-admin-go, honors `FIREBASE_AUTH_EMULATOR_HOST`; fake for tests). `RequireAuth` middleware verifies Bearer tokens and upserts the user row; `/v1/me` handlers depend on a narrow `UserStore` interface so unit tests are hermetic.
 
-**Tech Stack:** Go 1.23, chi v5, pgx v5, firebase.google.com/go/v4, Firebase CLI emulator (Java 17 present), Postgres 16 (local: Docker on :5433).
+**Tech Stack:** Go 1.25, chi v5, pgx v5, firebase.google.com/go/v4, Firebase CLI emulator (Java 17 present), Postgres 16 (local: Docker on :5433).
 
 ## Global Constraints
 
