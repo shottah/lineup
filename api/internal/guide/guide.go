@@ -122,7 +122,13 @@ func Generate(in Input) []Item {
 	sort.Slice(e.titles, func(i, j int) bool { return e.titles[i].ID < e.titles[j].ID })
 	for i := range e.titles {
 		t := &e.titles[i]
-		sort.Slice(t.Providers, func(a, b int) bool { return t.Providers[a] < t.Providers[b] })
+		// Deep-copy before sorting: the header copy above shares backing
+		// arrays with the caller's slices, and Generate must never mutate
+		// its input (purity + concurrent-caller safety).
+		p := make([]int64, len(t.Providers))
+		copy(p, t.Providers)
+		sort.Slice(p, func(a, b int) bool { return p[a] < p[b] })
+		t.Providers = p
 		e.byID[t.ID] = t
 		m := map[epKey]string{}
 		for _, a := range t.AirDates {
@@ -137,6 +143,7 @@ func Generate(in Input) []Item {
 		e.days = append(e.days, ds)
 		e.dayByDate[d.Date] = ds
 	}
+	sort.Slice(e.days, func(i, j int) bool { return e.days[i].date < e.days[j].date })
 
 	e.passKeep(in.Keep)
 	e.passAirPins()
@@ -336,6 +343,10 @@ func (e *engine) schedulable(t *Title, k epKey, date string) bool {
 // passFill greedily fills remaining capacity day by day using the fixed
 // scoring weights (fairness -2/placement, variety -3, cohesion +2).
 func (e *engine) passFill() {
+	type cand struct {
+		t *Title
+		k epKey
+	}
 	for di, ds := range e.days {
 		if !ds.enabled() {
 			continue
@@ -345,10 +356,6 @@ func (e *engine) passFill() {
 			prevDate = e.days[di-1].date
 		}
 		for {
-			type cand struct {
-				t *Title
-				k epKey
-			}
 			best := -1 << 30
 			var ties []cand
 			for i := range e.titles {

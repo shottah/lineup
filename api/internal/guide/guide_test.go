@@ -301,3 +301,14 @@ func TestAlternates(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateDoesNotMutateInput(t *testing.T) {
+	providers := []int64{9, 1, 5}
+	in := Input{Seed: 2, Days: week(evening(), evening()),
+		Titles: []Title{{ID: 1, Kind: "series", Runtime: 60, Providers: providers,
+			Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10}}}}
+	Generate(in)
+	if !reflect.DeepEqual(providers, []int64{9, 1, 5}) {
+		t.Fatalf("caller Providers mutated: %v", providers)
+	}
+}
