@@ -118,7 +118,7 @@ auth is Firebase ID tokens, added in a later task.
   printf '%s' 'YOUR_REAL_TMDB_KEY' | gcloud secrets versions add tmdb-api-key --data-file=- --project lineup-app-ae6b
   ```
 
-- [ ] Firebase console configuration (Firebase Auth / Identity Platform setup, App Hosting backend wiring) — tracked as part of Task 6, not covered by this script.
+- [ ] Firebase Auth + App Hosting setup — follow `infra/firebase.md` (health-gated runbook; the `projects:addfirebase` step is irreversible).
 
 ## Security note
 
