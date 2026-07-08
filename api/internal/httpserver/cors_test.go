@@ -4,10 +4,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/shottah/lineup/api/internal/fbauth"
 )
 
 func TestCORSPreflight(t *testing.T) {
-	srv := New(Deps{})
+	srv := New(Deps{
+		Verifier: &fbauth.Fake{Tokens: map[string]fbauth.Identity{}},
+		Users:    newFakeUsers(),
+	})
 	cases := []struct {
 		name      string
 		origin    string
@@ -16,6 +21,7 @@ func TestCORSPreflight(t *testing.T) {
 		{"localhost 3001 allowed", "http://localhost:3001", true},
 		{"localhost 3000 allowed", "http://localhost:3000", true},
 		{"hosted web.app allowed", "https://lineup-app-ae6b.web.app", true},
+		{"hosted firebaseapp.com allowed", "https://lineup-app-ae6b.firebaseapp.com", true},
 		{"unknown origin rejected", "https://evil.example.com", false},
 	}
 	for _, tc := range cases {
@@ -33,6 +39,9 @@ func TestCORSPreflight(t *testing.T) {
 			}
 			if !tc.wantAllow && got != "" {
 				t.Fatalf("ACAO = %q for disallowed origin, want empty", got)
+			}
+			if tc.wantAllow && rec.Code != http.StatusOK {
+				t.Fatalf("preflight status = %d, want 200", rec.Code)
 			}
 		})
 	}
