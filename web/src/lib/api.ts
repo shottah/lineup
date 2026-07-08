@@ -22,14 +22,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(401, "no_session");
   }
   const token = await user.getIdToken();
-  const res = await fetch(`${config.apiUrl}${path}`, {
-    ...init,
-    headers: {
-      ...init.headers,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const res = await fetch(`${config.apiUrl}${path}`, { ...init, headers });
   if (!res.ok) {
     let code = "unknown";
     try {
