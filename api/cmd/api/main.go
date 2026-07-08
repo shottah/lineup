@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/shottah/lineup/api/internal/config"
+	"github.com/shottah/lineup/api/internal/fbauth"
 	"github.com/shottah/lineup/api/internal/httpserver"
 	"github.com/shottah/lineup/api/internal/store"
 )
@@ -25,6 +26,11 @@ func main() {
 	}
 	defer st.Close()
 
-	srv := httpserver.New(httpserver.Deps{Store: st})
+	verifier, err := fbauth.New(context.Background(), cfg.FirebaseProjectID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	srv := httpserver.New(httpserver.Deps{Store: st, Users: st, Verifier: verifier})
 	log.Fatal(srv.ListenAndServe())
 }
