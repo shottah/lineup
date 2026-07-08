@@ -22,9 +22,17 @@ func TestLoad(t *testing.T) {
 		{
 			name: "DATABASE_URL only, other fields default to empty",
 			env: map[string]string{
+				"DATABASE_URL":        "postgres://localhost/db",
+				"FIREBASE_PROJECT_ID": "proj-id",
+			},
+			want: Config{DatabaseURL: "postgres://localhost/db", FirebaseProjectID: "proj-id"},
+		},
+		{
+			name: "missing FIREBASE_PROJECT_ID errors",
+			env: map[string]string{
 				"DATABASE_URL": "postgres://localhost/db",
 			},
-			want: Config{DatabaseURL: "postgres://localhost/db"},
+			wantErr: true,
 		},
 		{
 			name: "all fields set",

@@ -7,11 +7,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/shottah/lineup/api/internal/fbauth"
 	"github.com/shottah/lineup/api/internal/store"
 )
 
 type Deps struct {
-	Store *store.Store
+	Store    *store.Store
+	Users    UserStore
+	Verifier fbauth.TokenVerifier
 }
 
 func New(d Deps) *http.Server {
@@ -21,6 +24,13 @@ func New(d Deps) *http.Server {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ok":true}`))
 	})
+	if d.Verifier != nil && d.Users != nil {
+		r.Route("/v1", func(v1 chi.Router) {
+			v1.Use(requireAuth(d.Verifier, d.Users))
+			v1.Get("/me", handleGetMe)
+			v1.Patch("/me", handlePatchMe(d.Users))
+		})
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
