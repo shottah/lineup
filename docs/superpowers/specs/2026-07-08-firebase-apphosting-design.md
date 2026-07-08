@@ -27,8 +27,9 @@ Three lessons from that episode are baked into this design:
 **Repo artifacts** (branch `feat/6-firebase-apphosting`, squash-merge):
 
 - `infra/firebase.md` — runbook for all cloud steps (below)
-- `web/lib/config.ts` — committed client config object, `NODE_ENV`-switched
-- `web/apphosting.yaml` — `runConfig` cost guard only (no env section)
+- `web/src/lib/config.ts` — committed client config object, `NODE_ENV`-switched
+- `web/apphosting.yaml` — `runConfig` cost guard only (no env section);
+  already exists from PR #21 with exactly this content, so verify-only
 - `infra/README.md` — link the runbook from the manual-steps checklist
 
 **Cloud state** (CLI-assisted, per-step user approval, health-gated):
