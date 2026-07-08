@@ -1,4 +1,3 @@
-//
 // Package tvmaze is a minimal client for the TVMaze API (keyless), used to
 // resolve series by IMDB id and fetch real episode air dates for
 // currently-airing shows. Requests are rate-limited under TVMaze's
