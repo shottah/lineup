@@ -31,6 +31,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srv := httpserver.New(httpserver.Deps{Store: st, Users: st, Verifier: verifier, Entries: st})
+	srv := httpserver.New(httpserver.Deps{Store: st, Users: st, Verifier: verifier, Entries: st, Guides: st})
 	log.Fatal(srv.ListenAndServe())
 }
