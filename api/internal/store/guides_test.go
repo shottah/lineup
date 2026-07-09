@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/shottah/lineup/api/internal/guide"
@@ -288,13 +289,160 @@ func TestSwapTitle(t *testing.T) {
 	ctx := context.Background()
 	uid, seriesID, _ := seedGuideWorld(t, s)
 
-	info, err := s.SwapTitle(ctx, uid, seriesID)
+	info, err := s.SwapTitle(ctx, uid, seriesID, "US")
 	if err != nil || info.Kind != "series" || info.Runtime != 60 || info.PointerSeason != 1 {
 		t.Fatalf("swap info = %+v, %v", info, err)
 	}
+	if !reflect.DeepEqual(info.Providers, []int64{901}) {
+		t.Fatalf("swap info providers = %v, want [901]", info.Providers)
+	}
+	// Region filter applies to swap providers too: GB has 902, not 901.
+	gbInfo, err := s.SwapTitle(ctx, uid, seriesID, "GB")
+	if err != nil || !reflect.DeepEqual(gbInfo.Providers, []int64{902}) {
+		t.Fatalf("GB swap providers = %v, %v, want [902]", gbInfo, err)
+	}
 	// A title not on rotation/watchlist is invalid.
 	stray := seedTitle(t, s, "Stray")
-	if _, err := s.SwapTitle(ctx, uid, stray); !errors.Is(err, ErrTitleNotFound) {
+	if _, err := s.SwapTitle(ctx, uid, stray, "US"); !errors.Is(err, ErrTitleNotFound) {
 		t.Fatalf("stray swap err = %v", err)
+	}
+}
+
+// TestUpdateGuideItemSwapProvider ports the final-review probe reproducing
+// the swap-provider-staleness bug: a swap must recompute provider_id from
+// the new title's region providers rather than leaving the old title's
+// provider in place.
+func TestUpdateGuideItemSwapProvider(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, movieID := seedGuideWorld(t, s) // series on US:901, movie on US:902
+
+	// A second series sharing the movie's provider (902) plus a lower id
+	// (500), to distinguish "keep the current provider" from "lowest id".
+	altSeries := seedTitle(t, s, "Alt Series")
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO providers (id, name) VALUES (500,'P500') ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatalf("seed provider 500: %v", err)
+	}
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO title_providers (title_id, region, provider_id) VALUES ($1,'US',500),($1,'US',902)`, altSeries); err != nil {
+		t.Fatalf("seed alt providers: %v", err)
+	}
+	if _, err := s.UpsertEntry(ctx, uid, altSeries, EntryUpdate{Status: strp("rotation")}); err != nil {
+		t.Fatalf("seed alt rotation: %v", err)
+	}
+	// A title with no region providers yet: pre-ingestion (#11) reality.
+	bareTitle := seedTitle(t, s, "Bare Title")
+	if _, err := s.UpsertEntry(ctx, uid, bareTitle, EntryUpdate{Status: strp("rotation")}); err != nil {
+		t.Fatalf("seed bare rotation: %v", err)
+	}
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	itemID := g.Items[0].ID
+	sz, ez := 0, 0
+
+	// Swap to the movie (only provider 902; item currently on 901): the
+	// current provider isn't among the movie's, so it falls back to the
+	// (only, so also lowest) new provider.
+	info, err := s.SwapTitle(ctx, uid, movieID, "US")
+	if err != nil || !reflect.DeepEqual(info.Providers, []int64{902}) {
+		t.Fatalf("swap info (movie) = %+v, %v, want providers [902]", info, err)
+	}
+	it, err := s.UpdateGuideItem(ctx, uid, g.ID, itemID, GuideItemUpdate{
+		TitleID: &movieID, Season: &sz, Episode: &ez, SwapProviders: info.Providers, SetEdited: true,
+	})
+	if err != nil || it.ProviderID != 902 {
+		t.Fatalf("swap to movie = %+v, %v, want provider_id 902", it, err)
+	}
+
+	// Swap to altSeries (providers [500, 902]; item currently on 902): the
+	// current provider streams there too, so it's KEPT over the lower id.
+	info, err = s.SwapTitle(ctx, uid, altSeries, "US")
+	if err != nil || !reflect.DeepEqual(info.Providers, []int64{500, 902}) {
+		t.Fatalf("swap info (altSeries) = %+v, %v, want providers [500 902]", info, err)
+	}
+	it, err = s.UpdateGuideItem(ctx, uid, g.ID, itemID, GuideItemUpdate{
+		TitleID: &altSeries, Season: &sz, Episode: &ez, SwapProviders: info.Providers, SetEdited: true,
+	})
+	if err != nil || it.ProviderID != 902 {
+		t.Fatalf("swap to altSeries = %+v, %v, want provider_id kept at 902", it, err)
+	}
+
+	// Swap to a title with no region providers: provider left unchanged,
+	// best effort until #11 populates title_providers.
+	info, err = s.SwapTitle(ctx, uid, bareTitle, "US")
+	if err != nil || len(info.Providers) != 0 {
+		t.Fatalf("swap info (bare) = %+v, %v, want empty providers", info, err)
+	}
+	it, err = s.UpdateGuideItem(ctx, uid, g.ID, itemID, GuideItemUpdate{
+		TitleID: &bareTitle, Season: &sz, Episode: &ez, SwapProviders: info.Providers, SetEdited: true,
+	})
+	if err != nil || it.ProviderID != 902 {
+		t.Fatalf("swap to bare title = %+v, %v, want provider_id unchanged at 902", it, err)
+	}
+}
+
+// TestCreateGuideOverlapTouchAdjacency ports the final-review probe on the
+// overlap-replacement boundary: a guide starting the day AFTER another ends
+// doesn't overlap it (both survive), but one starting ON the other's end
+// date touches it and is treated as an overlap (replaced). See
+// CreateGuideReplacingOverlaps' `start_date <= end AND end_date >= start`.
+func TestCreateGuideOverlapTouchAdjacency(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := seedUser(t, s)
+
+	g1, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, nil)
+	if err != nil {
+		t.Fatalf("g1: %v", err)
+	}
+	// Adjacent: starts the day after g1 ends -> no overlap, both survive.
+	if _, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-12", "2026-01-18", 2, nil); err != nil {
+		t.Fatalf("g2: %v", err)
+	}
+	if _, err := s.GuideWithItems(ctx, uid, g1.ID); err != nil {
+		t.Fatalf("adjacent guide must survive, got %v", err)
+	}
+	// Touching: starts ON g1's end date -> overlap, g1 replaced.
+	if _, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-11", "2026-01-12", 3, nil); err != nil {
+		t.Fatalf("g3: %v", err)
+	}
+	if _, err := s.GuideWithItems(ctx, uid, g1.ID); !errors.Is(err, ErrGuideNotFound) {
+		t.Fatalf("boundary-touching guide must replace g1, err = %v", err)
+	}
+}
+
+// TestMarkItemWatchedExactPointerAdvance ports the final-review probe on
+// the pointer-advance boundary: watching the episode the pointer sits on
+// EXACTLY (not one beyond it) must still advance the pointer by one, and
+// re-watching the same item must not advance it again.
+func TestMarkItemWatchedExactPointerAdvance(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, _ := seedGuideWorld(t, s) // S1=2 eps, S2=2 eps; pointer starts 1/1
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+	e := entryOf(t, s, uid, seriesID)
+	if e.Pointer != (Pointer{Season: 1, Episode: 2}) {
+		t.Fatalf("pointer after exact-episode watch = %+v, want 1/2", e.Pointer)
+	}
+	// Re-watch the same item: pointer must not advance again.
+	if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+		t.Fatalf("re-watch: %v", err)
+	}
+	e = entryOf(t, s, uid, seriesID)
+	if e.Pointer != (Pointer{Season: 1, Episode: 2}) {
+		t.Fatalf("pointer after re-watch = %+v, want unchanged 1/2", e.Pointer)
 	}
 }

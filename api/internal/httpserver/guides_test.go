@@ -181,6 +181,27 @@ func (f *fakeGuides) UpdateGuideItem(_ context.Context, userID, guideID, itemID 
 	if upd.SetEdited {
 		it.Edited = true
 	}
+	if len(upd.SwapProviders) > 0 {
+		// Mirror store.UpdateGuideItem's CASE: keep the current provider
+		// when the new title streams there too, else fall back to the
+		// lowest of the new title's providers.
+		kept := false
+		for _, p := range upd.SwapProviders {
+			if p == it.ProviderID {
+				kept = true
+				break
+			}
+		}
+		if !kept {
+			lowest := upd.SwapProviders[0]
+			for _, p := range upd.SwapProviders[1:] {
+				if p < lowest {
+					lowest = p
+				}
+			}
+			it.ProviderID = lowest
+		}
+	}
 	cp := *it
 	return &cp, nil
 }
@@ -206,7 +227,7 @@ func (f *fakeGuides) MarkItemWatched(_ context.Context, userID, guideID, itemID 
 	return &cp, nil
 }
 
-func (f *fakeGuides) SwapTitle(_ context.Context, _ int64, titleID int64) (*store.SwapInfo, error) {
+func (f *fakeGuides) SwapTitle(_ context.Context, _ int64, titleID int64, _ string) (*store.SwapInfo, error) {
 	info, ok := f.swapInfo[titleID]
 	if !ok {
 		return nil, store.ErrTitleNotFound
@@ -400,6 +421,46 @@ func TestRegenerate(t *testing.T) {
 	}
 }
 
+// TestRegenerateDoesNotBackfillPast guards against the engine treating a
+// past day's spare capacity as fair game. The past day here holds a single
+// 30-minute item inside the default 19:00-23:00 (1140-1380) window, leaving
+// 210 idle minutes; a second title with open episodes is available, so
+// without zeroing past-day windows before Generate, passFill would happily
+// schedule it into that gap.
+func TestRegenerateDoesNotBackfillPast(t *testing.T) {
+	fg := newFakeGuides()
+	fg.titles = []guide.Title{
+		{ID: 1, Kind: "series", Name: "Show1", Runtime: 30, Providers: []int64{1},
+			Pointer: guide.Pointer{Season: 1, Episode: 1}, SeasonEpisodes: map[int]int{1: 20}},
+		{ID: 2, Kind: "series", Name: "Show2", Runtime: 30, Providers: []int64{2},
+			Pointer: guide.Pointer{Season: 1, Episode: 1}, SeasonEpisodes: map[int]int{1: 20}},
+	}
+	items := []store.GuideItem{
+		{ID: 1, Date: "2026-01-05", StartMin: 1140, EndMin: 1170, TitleID: 1, Season: 1, Episode: 1, ProviderID: 1, IsPlan: true},
+	}
+	fg.setGuide(1, &store.Guide{ID: 1, StartDate: "2026-01-05", EndDate: "2026-01-14", Seed: 555, Items: items})
+	h := guidesServer(t, fg)
+
+	rec := do(t, h, http.MethodPost, "/v1/guides/1/regenerate", "tok-1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("regenerate = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if fg.replaceArgs == nil {
+		t.Fatal("ReplaceUnkeptItems was not called")
+	}
+	const today = "2026-01-08" // fixedClock, UTC-formatted
+	sawFuture := false
+	for _, ni := range fg.replaceArgs.newItems {
+		if ni.Date < today {
+			t.Fatalf("regenerate backfilled a past day with a new item: %+v", ni)
+		}
+		sawFuture = true
+	}
+	if !sawFuture {
+		t.Fatal("expected the engine to generate at least one future item (test would be vacuous otherwise)")
+	}
+}
+
 func TestPatchItem(t *testing.T) {
 	newItemGuide := func() *fakeGuides {
 		fg := newFakeGuides()
@@ -444,7 +505,7 @@ func TestPatchItem(t *testing.T) {
 
 	t.Run("swap series", func(t *testing.T) {
 		fg := newItemGuide()
-		fg.swapInfo[7] = &store.SwapInfo{TitleID: 7, Kind: "series", Runtime: 45, PointerSeason: 2, PointerEpisode: 3}
+		fg.swapInfo[7] = &store.SwapInfo{TitleID: 7, Kind: "series", Runtime: 45, PointerSeason: 2, PointerEpisode: 3, Providers: []int64{}}
 		h := guidesServer(t, fg)
 		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":7}`)
 		if rec.Code != http.StatusOK {
@@ -472,7 +533,7 @@ func TestPatchItem(t *testing.T) {
 		// them for movies (the `if info.Kind == "series"` gate), so the
 		// season/episode assertion below genuinely depends on that gate
 		// rather than just reflecting zero-valued fixture fields.
-		fg.swapInfo[8] = &store.SwapInfo{TitleID: 8, Kind: "movie", Runtime: 100, PointerSeason: 9, PointerEpisode: 9}
+		fg.swapInfo[8] = &store.SwapInfo{TitleID: 8, Kind: "movie", Runtime: 100, PointerSeason: 9, PointerEpisode: 9, Providers: []int64{}}
 		h := guidesServer(t, fg)
 		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":8}`)
 		if rec.Code != http.StatusOK {
@@ -484,6 +545,49 @@ func TestPatchItem(t *testing.T) {
 		}
 		if u.DurationMin == nil || *u.DurationMin != 100 {
 			t.Fatalf("duration_min = %v, want 100 (swap runtime)", u.DurationMin)
+		}
+	})
+
+	t.Run("swap keeps provider when new title streams there", func(t *testing.T) {
+		fg := newFakeGuides()
+		fg.setGuide(1, &store.Guide{ID: 1, Items: []store.GuideItem{
+			{ID: 1, Date: "2026-01-09", StartMin: 1140, EndMin: 1170, TitleID: 1, ProviderID: 5},
+		}})
+		fg.swapInfo[7] = &store.SwapInfo{TitleID: 7, Kind: "series", Runtime: 45, PointerSeason: 2, PointerEpisode: 3, Providers: []int64{3, 5, 9}}
+		h := guidesServer(t, fg)
+		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":7}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("swap = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		if !reflect.DeepEqual(fg.updateArgs.SwapProviders, []int64{3, 5, 9}) {
+			t.Fatalf("SwapProviders = %v, want [3 5 9]", fg.updateArgs.SwapProviders)
+		}
+		var got store.GuideItem
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("body not JSON: %v", err)
+		}
+		if got.ProviderID != 5 {
+			t.Fatalf("provider_id = %d, want 5 (kept: new title streams on the item's current provider)", got.ProviderID)
+		}
+	})
+
+	t.Run("swap sets lowest provider when new title doesn't stream there", func(t *testing.T) {
+		fg := newFakeGuides()
+		fg.setGuide(1, &store.Guide{ID: 1, Items: []store.GuideItem{
+			{ID: 1, Date: "2026-01-09", StartMin: 1140, EndMin: 1170, TitleID: 1, ProviderID: 99},
+		}})
+		fg.swapInfo[7] = &store.SwapInfo{TitleID: 7, Kind: "series", Runtime: 45, PointerSeason: 2, PointerEpisode: 3, Providers: []int64{3, 5, 9}}
+		h := guidesServer(t, fg)
+		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":7}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("swap = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		var got store.GuideItem
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("body not JSON: %v", err)
+		}
+		if got.ProviderID != 3 {
+			t.Fatalf("provider_id = %d, want 3 (lowest of the new title's providers: item's current provider isn't among them)", got.ProviderID)
 		}
 	})
 

@@ -51,6 +51,12 @@ type GuideItemUpdate struct {
 	Episode     *int
 	Pinned      *bool
 	SetEdited   bool
+	// SwapProviders is the new title's region-filtered provider ids
+	// (SwapInfo.Providers, sorted ascending), set only on a title swap.
+	// UpdateGuideItem keeps the item's current provider when it's among
+	// these, otherwise falls back to the lowest id; nil/empty leaves
+	// provider_id unchanged (see UpdateGuideItem).
+	SwapProviders []int64
 }
 
 // SwapInfo describes a swap-eligible title (rotation or watchlist).
@@ -60,6 +66,11 @@ type SwapInfo struct {
 	Runtime        int
 	PointerSeason  int
 	PointerEpisode int
+	// Providers is the swap target's region-filtered provider ids, sorted
+	// ascending; empty (not nil) when the title has none in this region —
+	// pre-ingestion reality (#11 populates title_providers), so callers
+	// treat empty as "leave the provider alone, best effort".
+	Providers []int64
 }
 
 // nextPointer returns the pointer following the watched episode, rolling
@@ -305,23 +316,44 @@ func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, k
 }
 
 // UpdateGuideItem applies move/swap/pin semantics; moves preserve duration
-// unless DurationMin overrides it.
+// unless DurationMin overrides it. On a title swap (SwapProviders set),
+// provider_id is recomputed rather than left stale: kept when the new
+// title also streams on it, else set to the new title's lowest provider
+// id. Empty/nil SwapProviders (title not yet through provider ingestion,
+// #11) leaves provider_id unchanged — best effort until then.
 func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd GuideItemUpdate) (*GuideItem, error) {
+	var providers []int64
+	var lowest int64
+	if len(upd.SwapProviders) > 0 {
+		providers = upd.SwapProviders
+		lowest = providers[0]
+		for _, p := range providers[1:] {
+			if p < lowest {
+				lowest = p
+			}
+		}
+	}
 	q := `
 UPDATE guide_items gi SET
-  date      = COALESCE($4::date, gi.date),
-  start_min = COALESCE($5, gi.start_min),
-  end_min   = COALESCE($5, gi.start_min) + COALESCE($6, gi.end_min - gi.start_min),
-  title_id  = COALESCE($7, gi.title_id),
-  season    = COALESCE($8, gi.season),
-  episode   = COALESCE($9, gi.episode),
-  pinned    = COALESCE($10, gi.pinned),
-  edited    = gi.edited OR $11
+  date        = COALESCE($4::date, gi.date),
+  start_min   = COALESCE($5, gi.start_min),
+  end_min     = COALESCE($5, gi.start_min) + COALESCE($6, gi.end_min - gi.start_min),
+  title_id    = COALESCE($7, gi.title_id),
+  season      = COALESCE($8, gi.season),
+  episode     = COALESCE($9, gi.episode),
+  pinned      = COALESCE($10, gi.pinned),
+  edited      = gi.edited OR $11,
+  provider_id = CASE
+    WHEN $12::bigint[] IS NULL OR cardinality($12::bigint[]) = 0 THEN gi.provider_id
+    WHEN gi.provider_id = ANY($12::bigint[]) THEN gi.provider_id
+    ELSE $13
+  END
 FROM guides g
 WHERE gi.id = $3 AND gi.guide_id = $2 AND g.id = gi.guide_id AND g.user_id = $1
 RETURNING ` + guideItemCols
 	it, err := scanGuideItem(s.Pool.QueryRow(ctx, q, userID, guideID, itemID,
-		upd.Date, upd.StartMin, upd.DurationMin, upd.TitleID, upd.Season, upd.Episode, upd.Pinned, upd.SetEdited))
+		upd.Date, upd.StartMin, upd.DurationMin, upd.TitleID, upd.Season, upd.Episode, upd.Pinned, upd.SetEdited,
+		providers, lowest))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrGuideNotFound
 	}
@@ -437,8 +469,10 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 }
 
 // SwapTitle validates a swap target (rotation or watchlist) and returns
-// what the handler needs to rewrite the item.
-func (s *Store) SwapTitle(ctx context.Context, userID, titleID int64) (*SwapInfo, error) {
+// what the handler needs to rewrite the item, including the target's
+// region-filtered providers so the caller can recompute provider_id
+// instead of leaving the old title's provider stale.
+func (s *Store) SwapTitle(ctx context.Context, userID, titleID int64, region string) (*SwapInfo, error) {
 	info := &SwapInfo{}
 	err := s.Pool.QueryRow(ctx, `
 SELECT t.id, t.kind, t.runtime_minutes, ut.pointer_season, ut.pointer_episode
@@ -450,6 +484,28 @@ WHERE ut.user_id = $1 AND ut.title_id = $2 AND ut.status IN ('rotation','watchli
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: swap title: %w", err)
+	}
+
+	// Region-filtered providers for the swap target, sorted ascending.
+	// Empty (not nil) when the title hasn't been through provider
+	// ingestion yet (#11) — the caller then leaves provider_id alone.
+	info.Providers = []int64{}
+	prows, err := s.Pool.Query(ctx, `
+SELECT provider_id FROM title_providers WHERE title_id = $1 AND region = $2 ORDER BY provider_id`,
+		titleID, region)
+	if err != nil {
+		return nil, fmt.Errorf("store: swap title providers: %w", err)
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var pid int64
+		if err := prows.Scan(&pid); err != nil {
+			return nil, fmt.Errorf("store: swap title providers: scan: %w", err)
+		}
+		info.Providers = append(info.Providers, pid)
+	}
+	if err := prows.Err(); err != nil {
+		return nil, fmt.Errorf("store: swap title providers: rows: %w", err)
 	}
 	return info, nil
 }

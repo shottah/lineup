@@ -27,7 +27,7 @@ type GuideStore interface {
 	UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd store.GuideItemUpdate) (*store.GuideItem, error)
 	DeleteGuideItem(ctx context.Context, userID, guideID, itemID int64) error
 	MarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
-	SwapTitle(ctx context.Context, userID, titleID int64) (*store.SwapInfo, error)
+	SwapTitle(ctx context.Context, userID, titleID int64, region string) (*store.SwapInfo, error)
 }
 
 const dateFmt = "2006-01-02"
@@ -157,10 +157,26 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 		}
 		days := int(end.Sub(start).Hours()/24) + 1
 
+		// Reusing g.Seed (rather than minting a fresh one) means a first
+		// regenerate with no user edits may still lawfully reshuffle
+		// future unpinned items: the keep list perturbs the same rng/
+		// capacity flow that produced the original guide, so the greedy
+		// fill can land differently even though the seed matches.
+		// Repeated regenerates against an unchanged keep set are stable,
+		// since `keep`/`in` are then identical run to run.
 		in, err := d.buildInput(r.Context(), u, start, days, g.Seed, keep)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
+		}
+		// The past is immutable: keeps (pinned/edited/watched/past-dated
+		// items) echo through via `keep` above, but no NEW items or
+		// alternates may land before today, so disable those days for
+		// generation regardless of what the user's schedule windows say.
+		for i := range in.Days {
+			if in.Days[i].Date < today {
+				in.Days[i].Window = guide.Window{}
+			}
 		}
 		out := guide.Generate(in)
 
@@ -223,7 +239,7 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 			SetEdited: body.Date != nil || body.StartMin != nil || body.TitleID != nil}
 
 		if body.TitleID != nil {
-			info, err := d.Guides.SwapTitle(r.Context(), u.ID, *body.TitleID)
+			info, err := d.Guides.SwapTitle(r.Context(), u.ID, *body.TitleID, u.Region)
 			switch {
 			case errors.Is(err, store.ErrTitleNotFound):
 				writeJSONError(w, http.StatusUnprocessableEntity, "invalid title")
@@ -239,6 +255,11 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 				season, episode = info.PointerSeason, info.PointerEpisode
 			}
 			upd.Season, upd.Episode = &season, &episode
+			// Recompute provider_id in the store instead of carrying over
+			// the swapped-out title's stale provider: keep the item's
+			// current provider when the new title streams there too,
+			// else the store falls back to the lowest id.
+			upd.SwapProviders = info.Providers
 		}
 
 		it, err := d.Guides.UpdateGuideItem(r.Context(), u.ID, gid, itemID, upd)
