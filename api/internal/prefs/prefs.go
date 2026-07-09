@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 )
 
 var dayKeys = []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
@@ -68,4 +69,40 @@ func Validate(raw json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// ParsedWindow is a decoded viewing window in minutes from midnight.
+type ParsedWindow struct {
+	Enabled  bool
+	StartMin int
+	EndMin   int
+}
+
+// Windows decodes a schedule_prefs document into per-weekday windows for
+// guide generation. The legacy empty document `{}` (the schema default
+// before first sign-in) and empty input yield an empty map, not an error.
+func Windows(raw json.RawMessage) (map[string]ParsedWindow, error) {
+	trimmed := string(bytes.TrimSpace(raw))
+	if trimmed == "" || trimmed == "{}" {
+		return map[string]ParsedWindow{}, nil
+	}
+	if err := Validate(raw); err != nil {
+		return nil, err
+	}
+	var doc prefsDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("prefs: %w", err) // unreachable after Validate
+	}
+	out := make(map[string]ParsedWindow, len(doc.Windows))
+	for day, w := range doc.Windows {
+		out[day] = ParsedWindow{Enabled: w.Enabled, StartMin: hhmm(w.Start), EndMin: hhmm(w.End)}
+	}
+	return out, nil
+}
+
+// hhmm converts a Validate-checked "HH:MM" to minutes from midnight.
+func hhmm(s string) int {
+	h, _ := strconv.Atoi(s[:2])
+	m, _ := strconv.Atoi(s[3:])
+	return h*60 + m
 }
