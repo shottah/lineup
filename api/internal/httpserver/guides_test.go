@@ -45,6 +45,7 @@ type fakeGuides struct {
 
 	currentResult *store.Guide
 	currentErr    error
+	currentToday  string // records the `today` arg CurrentGuide was called with
 
 	guides map[int64]map[int64]*store.Guide // userID -> guideID -> guide
 
@@ -122,7 +123,8 @@ func (f *fakeGuides) CreateGuideReplacingOverlaps(_ context.Context, userID int6
 	return &store.Guide{ID: 1, StartDate: startDate, EndDate: endDate, Seed: seed, Items: toStoreItems(items, 100)}, nil
 }
 
-func (f *fakeGuides) CurrentGuide(_ context.Context, _ int64, _ string) (*store.Guide, error) {
+func (f *fakeGuides) CurrentGuide(_ context.Context, _ int64, today string) (*store.Guide, error) {
+	f.currentToday = today
 	if f.currentErr != nil {
 		return nil, f.currentErr
 	}
@@ -214,7 +216,14 @@ func (f *fakeGuides) SwapTitle(_ context.Context, _ int64, titleID int64) (*stor
 
 func guidesServer(t *testing.T, fg *fakeGuides) http.Handler {
 	t.Helper()
-	users := newFakeUsers()
+	return guidesServerWithUsers(t, fg, newFakeUsers())
+}
+
+// guidesServerWithUsers is like guidesServer but lets the caller pre-seed the
+// fake user store (e.g. with non-default SchedulePrefs) before any request
+// runs.
+func guidesServerWithUsers(t *testing.T, fg *fakeGuides, users *fakeUsers) http.Handler {
+	t.Helper()
 	verifier := fakeVerifierWithTok1()
 	srv := New(Deps{Users: users, Verifier: verifier, Guides: fg, Now: func() time.Time { return fixedClock }})
 	return srv.Handler
@@ -251,9 +260,32 @@ func TestCreateGuideValidation(t *testing.T) {
 func TestCreateGuideHappyPath(t *testing.T) {
 	fg := newFakeGuides()
 	fg.titles = fixtureTitles()
-	h := guidesServer(t, fg)
 
-	rec := do(t, h, http.MethodPost, "/v1/guides", "tok-1", `{"start_date":"2026-01-10","days":3}`)
+	// Enable only tue/thu/sat (all seven keys must be present with valid
+	// HH:MM times to pass prefs.Validate). A uniform prefs.Default() fixture
+	// (all 7 days enabled) can't verify the weekday-key mapping in guideDays
+	// (guides.go), since every requested day would produce an item
+	// regardless of whether the mapping used the right key.
+	const tueThuSatPrefs = `{"windows":{` +
+		`"mon":{"enabled":false,"start":"19:00","end":"23:00"},` +
+		`"tue":{"enabled":true,"start":"19:00","end":"23:00"},` +
+		`"wed":{"enabled":false,"start":"19:00","end":"23:00"},` +
+		`"thu":{"enabled":true,"start":"19:00","end":"23:00"},` +
+		`"fri":{"enabled":false,"start":"19:00","end":"23:00"},` +
+		`"sat":{"enabled":true,"start":"19:00","end":"23:00"},` +
+		`"sun":{"enabled":false,"start":"19:00","end":"23:00"}` +
+		`}}`
+	users := newFakeUsers()
+	users.byUID["uid-1"] = &store.User{
+		ID: 1, FirebaseUID: "uid-1", Email: "one@example.com", DisplayName: "One",
+		Region: "US", SchedulePrefs: json.RawMessage(tueThuSatPrefs),
+	}
+	h := guidesServerWithUsers(t, fg, users)
+
+	// 2026-01-05 is a Monday, so a 4-day request spans Mon 05..Thu 08: only
+	// Tue 06 and Thu 08 are enabled weekdays within this range (Sat is
+	// enabled in prefs but falls outside the requested window).
+	rec := do(t, h, http.MethodPost, "/v1/guides", "tok-1", `{"start_date":"2026-01-05","days":4}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d, want 201 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -263,22 +295,32 @@ func TestCreateGuideHappyPath(t *testing.T) {
 	if fg.createArgs.seed != fixedClock.UnixNano() {
 		t.Fatalf("seed = %d, want %d (fixed clock nanos)", fg.createArgs.seed, fixedClock.UnixNano())
 	}
-	wantEnd := time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC).Format(dateFmt)
-	if fg.createArgs.startDate != "2026-01-10" || fg.createArgs.endDate != wantEnd {
-		t.Fatalf("dates = %s..%s, want 2026-01-10..%s", fg.createArgs.startDate, fg.createArgs.endDate, wantEnd)
+	wantEnd := time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC).Format(dateFmt)
+	if fg.createArgs.startDate != "2026-01-05" || fg.createArgs.endDate != wantEnd {
+		t.Fatalf("dates = %s..%s, want 2026-01-05..%s", fg.createArgs.startDate, fg.createArgs.endDate, wantEnd)
 	}
 	// The fixture has one series title that places one episode per enabled
-	// day; the fake user's default prefs enable all 7 weekdays, so 3
-	// requested days must yield 3 generated items.
-	if len(fg.createArgs.items) != 3 {
-		t.Fatalf("generated items = %d, want 3 (one per enabled day): %+v", len(fg.createArgs.items), fg.createArgs.items)
+	// day; with only tue/thu falling inside the requested range, exactly 2
+	// items must be generated, each landing on a Tue/Thu/Sat date.
+	if len(fg.createArgs.items) != 2 {
+		t.Fatalf("generated items = %d, want 2 (one per enabled weekday in range): %+v", len(fg.createArgs.items), fg.createArgs.items)
+	}
+	wantWeekdays := map[time.Weekday]bool{time.Tuesday: true, time.Thursday: true, time.Saturday: true}
+	for _, it := range fg.createArgs.items {
+		d, err := time.Parse(dateFmt, it.Date)
+		if err != nil {
+			t.Fatalf("item date %q not parseable: %v", it.Date, err)
+		}
+		if !wantWeekdays[d.Weekday()] {
+			t.Fatalf("item date %q is a %s, want Tue/Thu/Sat", it.Date, d.Weekday())
+		}
 	}
 
 	var got store.Guide
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("body not JSON: %v", err)
 	}
-	if got.StartDate != "2026-01-10" || got.EndDate != wantEnd || got.Seed != fixedClock.UnixNano() || len(got.Items) != 3 {
+	if got.StartDate != "2026-01-05" || got.EndDate != wantEnd || got.Seed != fixedClock.UnixNano() || len(got.Items) != 2 {
 		t.Fatalf("echoed guide = %+v", got)
 	}
 }
@@ -298,6 +340,9 @@ func TestCurrentGuide(t *testing.T) {
 	}
 	if got.ID != 5 {
 		t.Fatalf("current guide id = %d, want 5", got.ID)
+	}
+	if fg.currentToday != "2026-01-08" {
+		t.Fatalf("CurrentGuide today = %q, want %q (fixed clock, UTC-formatted)", fg.currentToday, "2026-01-08")
 	}
 
 	fg2 := newFakeGuides()
@@ -422,7 +467,12 @@ func TestPatchItem(t *testing.T) {
 
 	t.Run("swap movie", func(t *testing.T) {
 		fg := newItemGuide()
-		fg.swapInfo[8] = &store.SwapInfo{TitleID: 8, Kind: "movie", Runtime: 100}
+		// PointerSeason/PointerEpisode are stale (nonzero) values a swap
+		// target's data might legitimately carry; the handler must ignore
+		// them for movies (the `if info.Kind == "series"` gate), so the
+		// season/episode assertion below genuinely depends on that gate
+		// rather than just reflecting zero-valued fixture fields.
+		fg.swapInfo[8] = &store.SwapInfo{TitleID: 8, Kind: "movie", Runtime: 100, PointerSeason: 9, PointerEpisode: 9}
 		h := guidesServer(t, fg)
 		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":8}`)
 		if rec.Code != http.StatusOK {
@@ -431,6 +481,9 @@ func TestPatchItem(t *testing.T) {
 		u := fg.updateArgs
 		if u.Season == nil || *u.Season != 0 || u.Episode == nil || *u.Episode != 0 {
 			t.Fatalf("movie season/episode = %v/%v, want 0/0", u.Season, u.Episode)
+		}
+		if u.DurationMin == nil || *u.DurationMin != 100 {
+			t.Fatalf("duration_min = %v, want 100 (swap runtime)", u.DurationMin)
 		}
 	})
 
