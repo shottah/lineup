@@ -32,10 +32,10 @@ spec:
                 secretKeyRef:
                   name: database-url
                   key: "latest"
-            - name: TMDB_API_KEY
+            - name: TMDB_READ_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: tmdb-api-key
+                  name: tmdb-read-token
                   key: "latest"
   traffic:
     - percent: 100
