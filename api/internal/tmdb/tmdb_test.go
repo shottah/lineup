@@ -139,3 +139,76 @@ func TestMovieDetails(t *testing.T) {
 		t.Fatalf("overview/poster not decoded: %+v", m)
 	}
 }
+
+// gotRuntimeMins is Game of Thrones' first episode_run_time entry as
+// recorded in tv_details.json. If Task 2's recording printed a different
+// episode_run_time array (TMDB data drifts), set this to its first
+// element — or 0 if the array was empty.
+const gotRuntimeMins = 0
+
+func TestTVDetails(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "tv_details.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	tv, err := c.TVDetails(context.Background(), 1399)
+	if err != nil {
+		t.Fatalf("TVDetails: %v", err)
+	}
+	if gotPath != "/3/tv/1399?append_to_response=external_ids" {
+		t.Fatalf("requested %q, want /3/tv/1399?append_to_response=external_ids", gotPath)
+	}
+	if tv.TMDBID != 1399 || tv.Name != "Game of Thrones" {
+		t.Fatalf("tv = %+v, want 1399/Game of Thrones", tv)
+	}
+	if tv.IMDBID != "tt0944947" {
+		t.Fatalf("IMDBID = %q, want tt0944947", tv.IMDBID)
+	}
+	if tv.Airing {
+		t.Fatalf("Airing = true for status Ended, want false")
+	}
+	if tv.RuntimeMinutes != gotRuntimeMins {
+		t.Fatalf("RuntimeMinutes = %d, want %d", tv.RuntimeMinutes, gotRuntimeMins)
+	}
+	// The fixture contains season 0 (specials) plus seasons 1-8; season 0
+	// must be excluded and season 1's episode count preserved.
+	if len(tv.Seasons) != 8 {
+		t.Fatalf("got %d seasons, want 8 (specials excluded): %+v", len(tv.Seasons), tv.Seasons)
+	}
+	for _, s := range tv.Seasons {
+		if s.Number == 0 {
+			t.Fatalf("season 0 not excluded: %+v", tv.Seasons)
+		}
+	}
+	if tv.Seasons[0].Number != 1 || tv.Seasons[0].EpisodeCount != 10 {
+		t.Fatalf("season 1 = %+v, want number 1 / 10 episodes", tv.Seasons[0])
+	}
+}
+
+func TestTVDetailsAiringWithoutIMDB(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "tv_details_variant.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	tv, err := c.TVDetails(context.Background(), 1399)
+	if err != nil {
+		t.Fatalf("TVDetails: %v", err)
+	}
+	if !tv.Airing {
+		t.Fatalf("Airing = false for status Returning Series, want true")
+	}
+	if tv.IMDBID != "" {
+		t.Fatalf("IMDBID = %q for null external imdb_id, want empty", tv.IMDBID)
+	}
+	if tv.RuntimeMinutes != 0 {
+		t.Fatalf("RuntimeMinutes = %d for empty episode_run_time, want 0", tv.RuntimeMinutes)
+	}
+}

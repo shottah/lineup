@@ -201,3 +201,68 @@ func (c *Client) MovieDetails(ctx context.Context, id int64) (Movie, error) {
 		RuntimeMinutes: resp.Runtime,
 	}, nil
 }
+
+// Season is one non-specials season; EpisodeCount drives the rotation
+// episode pointer.
+type Season struct {
+	Number       int
+	EpisodeCount int
+}
+
+// TV is the subset of TMDB TV details the titles/title_seasons tables
+// consume. IMDBID is "" when TMDB has none — a normal outcome ingestion
+// branches on (skips the TVMaze lookup), not an error.
+type TV struct {
+	TMDBID         int64
+	Name           string
+	Overview       string
+	PosterPath     string
+	RuntimeMinutes int
+	Airing         bool
+	IMDBID         string
+	Seasons        []Season
+}
+
+// TVDetails fetches GET /3/tv/{id} with external_ids appended (one round
+// trip). Season 0 (specials) is excluded; RuntimeMinutes is the first
+// episode_run_time entry, 0 when TMDB reports none; Airing means
+// status == "Returning Series".
+func (c *Client) TVDetails(ctx context.Context, id int64) (TV, error) {
+	var resp struct {
+		ID             int64  `json:"id"`
+		Name           string `json:"name"`
+		Overview       string `json:"overview"`
+		PosterPath     string `json:"poster_path"`
+		EpisodeRunTime []int  `json:"episode_run_time"`
+		Status         string `json:"status"`
+		Seasons        []struct {
+			SeasonNumber int `json:"season_number"`
+			EpisodeCount int `json:"episode_count"`
+		} `json:"seasons"`
+		ExternalIDs struct {
+			IMDBID string `json:"imdb_id"`
+		} `json:"external_ids"`
+	}
+	path := "/3/tv/" + strconv.FormatInt(id, 10) + "?append_to_response=external_ids"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return TV{}, err
+	}
+	tv := TV{
+		TMDBID:     resp.ID,
+		Name:       resp.Name,
+		Overview:   resp.Overview,
+		PosterPath: resp.PosterPath,
+		Airing:     resp.Status == "Returning Series",
+		IMDBID:     resp.ExternalIDs.IMDBID,
+	}
+	if len(resp.EpisodeRunTime) > 0 {
+		tv.RuntimeMinutes = resp.EpisodeRunTime[0]
+	}
+	for _, s := range resp.Seasons {
+		if s.SeasonNumber == 0 {
+			continue
+		}
+		tv.Seasons = append(tv.Seasons, Season{Number: s.SeasonNumber, EpisodeCount: s.EpisodeCount})
+	}
+	return tv, nil
+}
