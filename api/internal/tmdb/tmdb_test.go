@@ -114,3 +114,28 @@ func TestRetryCapOn500(t *testing.T) {
 		t.Fatalf("calls = %d, want 2 (retry capped at one)", calls)
 	}
 }
+
+func TestMovieDetails(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "movie_details.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	m, err := c.MovieDetails(context.Background(), 603)
+	if err != nil {
+		t.Fatalf("MovieDetails: %v", err)
+	}
+	if gotPath != "/3/movie/603" {
+		t.Fatalf("requested %q, want /3/movie/603", gotPath)
+	}
+	if m.TMDBID != 603 || m.Name != "The Matrix" || m.RuntimeMinutes != 136 {
+		t.Fatalf("movie = %+v, want 603/The Matrix/136m", m)
+	}
+	if m.Overview == "" || m.PosterPath == "" {
+		t.Fatalf("overview/poster not decoded: %+v", m)
+	}
+}

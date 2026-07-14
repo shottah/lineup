@@ -171,3 +171,33 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 		return nil
 	}
 }
+
+// Movie is the subset of TMDB movie details the titles table consumes.
+type Movie struct {
+	TMDBID         int64
+	Name           string
+	Overview       string
+	PosterPath     string
+	RuntimeMinutes int
+}
+
+// MovieDetails fetches GET /3/movie/{id}.
+func (c *Client) MovieDetails(ctx context.Context, id int64) (Movie, error) {
+	var resp struct {
+		ID         int64  `json:"id"`
+		Title      string `json:"title"`
+		Overview   string `json:"overview"`
+		PosterPath string `json:"poster_path"`
+		Runtime    int    `json:"runtime"`
+	}
+	if err := c.get(ctx, "/3/movie/"+strconv.FormatInt(id, 10), &resp); err != nil {
+		return Movie{}, err
+	}
+	return Movie{
+		TMDBID:         resp.ID,
+		Name:           resp.Title,
+		Overview:       resp.Overview,
+		PosterPath:     resp.PosterPath,
+		RuntimeMinutes: resp.Runtime,
+	}, nil
+}
