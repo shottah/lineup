@@ -1,0 +1,116 @@
+package tmdb
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+)
+
+// fixture reads a testdata file or fails the test.
+func fixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatalf("fixture %s: %v", name, err)
+	}
+	return b
+}
+
+func TestSearchMulti(t *testing.T) {
+	var gotPath, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path + "?" + r.URL.RawQuery
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "search_multi.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	results, err := c.SearchMulti(context.Background(), "the matrix")
+	if err != nil {
+		t.Fatalf("SearchMulti: %v", err)
+	}
+	if gotPath != "/3/search/multi?query=the+matrix" {
+		t.Fatalf("requested %q, want /3/search/multi?query=the+matrix", gotPath)
+	}
+	if gotAuth != "Bearer test-token" {
+		t.Fatalf("Authorization = %q, want Bearer test-token", gotAuth)
+	}
+	// Fixture holds one movie (603), one tv (1399), one person; the person
+	// must be dropped and tv mapped to "series".
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2 (person dropped): %+v", len(results), results)
+	}
+	movie, series := results[0], results[1]
+	if movie.Kind != "movie" || movie.TMDBID != 603 || movie.Name != "The Matrix" || movie.Year != "1999" {
+		t.Fatalf("movie = %+v, want movie/603/The Matrix/1999", movie)
+	}
+	if movie.Overview == "" || movie.PosterPath == "" {
+		t.Fatalf("movie overview/poster not decoded: %+v", movie)
+	}
+	if series.Kind != "series" || series.TMDBID != 1399 || series.Name != "Game of Thrones" || series.Year != "2011" {
+		t.Fatalf("series = %+v, want series/1399/Game of Thrones/2011", series)
+	}
+}
+
+func TestNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"status_code":34,"status_message":"not found"}`, http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	if _, err := c.SearchMulti(context.Background(), "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRetryOn429ThenSuccess(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"page":1,"results":[]}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	results, err := c.SearchMulti(context.Background(), "q")
+	if err != nil {
+		t.Fatalf("SearchMulti after retry: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (exactly one retry)", calls)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %+v, want empty", results)
+	}
+}
+
+func TestRetryCapOn500(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	_, err := c.SearchMulti(context.Background(), "q")
+	if err == nil || !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Fatalf("err = %v, want unexpected status 500", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (retry capped at one)", calls)
+	}
+}
