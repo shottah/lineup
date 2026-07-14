@@ -209,8 +209,8 @@ func TestTVDetailsAiringWithoutIMDB(t *testing.T) {
 	if tv.IMDBID != "" {
 		t.Fatalf("IMDBID = %q for null external imdb_id, want empty", tv.IMDBID)
 	}
-	if tv.RuntimeMinutes != 0 {
-		t.Fatalf("RuntimeMinutes = %d for empty episode_run_time, want 0", tv.RuntimeMinutes)
+	if tv.RuntimeMinutes != 55 {
+		t.Fatalf("RuntimeMinutes = %d, want 55 (first episode_run_time entry)", tv.RuntimeMinutes)
 	}
 }
 
