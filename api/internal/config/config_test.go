@@ -5,7 +5,7 @@ import "testing"
 // envKeys lists every environment variable Load reads. Each test case sets
 // all of them explicitly (to "" when absent from its env map) so cases
 // can't leak state from the outer test environment.
-var envKeys = []string{"DATABASE_URL", "TMDB_API_KEY", "FIREBASE_PROJECT_ID", "PORT"}
+var envKeys = []string{"DATABASE_URL", "TMDB_READ_TOKEN", "FIREBASE_PROJECT_ID", "PORT"}
 
 func TestLoad(t *testing.T) {
 	tests := []struct {
@@ -38,13 +38,13 @@ func TestLoad(t *testing.T) {
 			name: "all fields set",
 			env: map[string]string{
 				"DATABASE_URL":        "postgres://localhost/db",
-				"TMDB_API_KEY":        "tmdb-key",
+				"TMDB_READ_TOKEN":     "tmdb-token",
 				"FIREBASE_PROJECT_ID": "proj-id",
 				"PORT":                "9090",
 			},
 			want: Config{
 				DatabaseURL:       "postgres://localhost/db",
-				TMDBKey:           "tmdb-key",
+				TMDBReadToken:     "tmdb-token",
 				FirebaseProjectID: "proj-id",
 				Port:              "9090",
 			},
