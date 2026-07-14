@@ -266,3 +266,46 @@ func (c *Client) TVDetails(ctx context.Context, id int64) (TV, error) {
 	}
 	return tv, nil
 }
+
+// Provider is one streaming provider; fields feed the providers table
+// verbatim.
+type Provider struct {
+	ID       int64
+	Name     string
+	LogoPath string
+}
+
+// WatchProviders fetches GET /3/{movie|tv}/{id}/watch/providers and
+// returns the region's flatrate (streaming) entries only — rent/buy are
+// ignored. kind is Lineup's "movie"|"series". A region TMDB doesn't list,
+// or one without flatrate offers, yields an empty slice: a title having
+// no streaming home somewhere is data, not failure.
+func (c *Client) WatchProviders(ctx context.Context, kind string, id int64, region string) ([]Provider, error) {
+	var segment string
+	switch kind {
+	case "movie":
+		segment = "movie"
+	case "series":
+		segment = "tv"
+	default:
+		return nil, fmt.Errorf("tmdb: watch providers: unknown kind %q", kind)
+	}
+	var resp struct {
+		Results map[string]struct {
+			Flatrate []struct {
+				ProviderID int64  `json:"provider_id"`
+				Name       string `json:"provider_name"`
+				LogoPath   string `json:"logo_path"`
+			} `json:"flatrate"`
+		} `json:"results"`
+	}
+	path := "/3/" + segment + "/" + strconv.FormatInt(id, 10) + "/watch/providers"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	out := []Provider{}
+	for _, p := range resp.Results[region].Flatrate {
+		out = append(out, Provider{ID: p.ProviderID, Name: p.Name, LogoPath: p.LogoPath})
+	}
+	return out, nil
+}

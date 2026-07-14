@@ -2,6 +2,7 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -210,5 +211,84 @@ func TestTVDetailsAiringWithoutIMDB(t *testing.T) {
 	}
 	if tv.RuntimeMinutes != 0 {
 		t.Fatalf("RuntimeMinutes = %d for empty episode_run_time, want 0", tv.RuntimeMinutes)
+	}
+}
+
+func TestWatchProviders(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "watch_providers.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	got, err := c.WatchProviders(context.Background(), "series", 1399, "US")
+	if err != nil {
+		t.Fatalf("WatchProviders: %v", err)
+	}
+	if gotPath != "/3/tv/1399/watch/providers" {
+		t.Fatalf("requested %q, want /3/tv/1399/watch/providers (series maps to tv)", gotPath)
+	}
+
+	// Expected set derives from the fixture's own US.flatrate array; the
+	// fixture also carries buy/rent sections, which must NOT leak through.
+	var raw struct {
+		Results map[string]struct {
+			Flatrate []struct {
+				ProviderID int64  `json:"provider_id"`
+				Name       string `json:"provider_name"`
+				LogoPath   string `json:"logo_path"`
+			} `json:"flatrate"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(fixture(t, "watch_providers.json"), &raw); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	want := raw.Results["US"].Flatrate
+	if len(want) == 0 {
+		t.Fatal("fixture has no US flatrate entries; re-record Task 2")
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d providers, want %d (flatrate only): %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].ID != w.ProviderID || got[i].Name != w.Name || got[i].LogoPath != w.LogoPath {
+			t.Fatalf("provider[%d] = %+v, want %+v", i, got[i], w)
+		}
+	}
+}
+
+func TestWatchProvidersRegionMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture(t, "watch_providers.json"))
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	got, err := c.WatchProviders(context.Background(), "series", 1399, "ZZ")
+	if err != nil {
+		t.Fatalf("WatchProviders(ZZ): %v, want nil error (no home region is data, not failure)", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %+v for absent region, want empty", got)
+	}
+}
+
+func TestWatchProvidersBadKind(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		calls++
+	}))
+	defer srv.Close()
+
+	c := NewWithBaseURL(srv.URL, "test-token")
+	if _, err := c.WatchProviders(context.Background(), "tv", 1399, "US"); err == nil {
+		t.Fatal("kind \"tv\" accepted, want error (Lineup vocabulary is movie|series)")
+	}
+	if calls != 0 {
+		t.Fatalf("bad kind reached the server (%d calls), want validation before request", calls)
 	}
 }
