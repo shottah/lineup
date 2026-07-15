@@ -18,6 +18,9 @@ type Deps struct {
 	Verifier fbauth.TokenVerifier
 	Entries  EntryStore
 	Guides   GuideStore
+	Search   SearchClient
+	Ingest   Ingester
+	Titles   TitleReader
 	Now      func() time.Time
 }
 
@@ -39,6 +42,12 @@ func New(d Deps) *http.Server {
 			if d.Entries != nil {
 				v1.Patch("/titles/{id}/entry", handlePatchEntry(d.Entries))
 				v1.Get("/me/shelves/{shelf}", handleGetShelf(d.Entries))
+			}
+			if d.Search != nil {
+				v1.Get("/search", handleSearch(d.Search))
+			}
+			if d.Ingest != nil && d.Titles != nil {
+				v1.Get("/titles/{kind}/{tmdbID}", handleGetTitle(d.Ingest, d.Titles))
 			}
 			if d.Guides != nil {
 				v1.Post("/guides", handleCreateGuide(d))
