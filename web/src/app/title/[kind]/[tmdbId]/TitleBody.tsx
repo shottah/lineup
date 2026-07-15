@@ -55,7 +55,14 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
       <div className="pt-6 pb-8">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            // Deep links have no in-app history to pop; fall back to search.
+            if (window.history.length > 1) {
+              router.back();
+            } else {
+              router.push("/search");
+            }
+          }}
           className="pb-5 text-[13px] font-medium text-mut"
         >
           ← Back

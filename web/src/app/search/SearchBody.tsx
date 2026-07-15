@@ -37,10 +37,10 @@ export function SearchBody() {
         <input
           autoFocus
           type="search"
-          aria-label="Search movies and series"
+          aria-label="Search"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Search movies and series…"
+          placeholder="Search shows and movies…"
           className="w-full max-w-[560px] rounded-xl border border-line bg-panel px-[18px] py-[13px] text-[15px] text-ink placeholder:text-faint"
         />
         {q === "" ? (
