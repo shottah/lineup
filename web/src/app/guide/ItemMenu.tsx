@@ -253,7 +253,7 @@ export function ItemMenu({ guideId, item, title, columnDate, columnDow, columns,
             disabled={busy}
             className="rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] font-medium text-ink disabled:opacity-50"
           />
-          <Chip disabled={busy} onClick={() => moveM.mutate()}>
+          <Chip disabled={busy || !moveTime} onClick={() => moveM.mutate()}>
             Move
           </Chip>
         </div>

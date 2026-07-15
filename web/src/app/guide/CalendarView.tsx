@@ -18,9 +18,9 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
   const dateOptions = columns.map((c) => ({ date: c.date, dow: c.dow }));
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 snap-x lg:grid lg:grid-cols-7">
+    <div className="flex gap-2 overflow-x-auto pb-2 snap-x lg:overflow-visible lg:grid lg:grid-cols-7">
       {columns.map((col) => (
-        <div key={col.date} className="flex min-w-[160px] flex-col gap-1.5 snap-start">
+        <div key={col.date} className="flex min-w-[160px] lg:min-w-0 flex-col gap-1.5 snap-start">
           <div className="px-1 pt-1 pb-2 text-center">
             <div
               className={`text-[11px] font-semibold tracking-[0.1em] ${
