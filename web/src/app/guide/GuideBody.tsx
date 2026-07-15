@@ -44,8 +44,10 @@ function GuideView({ guide, today }: { guide: GuideResponse; today: string }) {
       api<GuideResponse>(`/v1/guides/${guide.id}/regenerate`, { method: "POST" }),
     onError: () => show("Couldn't save — try again."),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["guide"] });
       show("Re-planned your remaining evenings — watched and pinned stayed put");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["guide"] });
     },
   });
 

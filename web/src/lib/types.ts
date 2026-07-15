@@ -123,7 +123,7 @@ export type GuideResponse = {
   id: number;
   start_date: string;
   end_date: string;
-  seed: number;
+  seed: number; // UnixNano exceeds 2^53; JSON parsing truncates it. Display/echo only — never round-trip.
   items: GuideItem[];
   titles: Record<string, GuideTitleLookup>;
   providers: Record<string, ProviderRow>;

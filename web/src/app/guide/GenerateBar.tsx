@@ -45,11 +45,19 @@ export function GenerateBar() {
       }
     },
     onSuccess: () => {
+      show("Generated your week!");
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["guide"] });
     },
   });
 
   const busy = mutation.isPending;
+  const today = todayLocal();
+  const isValidDays =
+    Number.isInteger(days) && days >= MIN_DAYS && days <= MAX_DAYS;
+  const isValidDate = startDate >= today;
+  const canSubmit = isValidDays && isValidDate;
 
   return (
     <div className="flex justify-center py-16">
@@ -60,6 +68,7 @@ export function GenerateBar() {
             Start date
             <input
               type="date"
+              min={todayLocal()}
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] font-medium text-ink"
@@ -71,6 +80,7 @@ export function GenerateBar() {
               type="number"
               min={MIN_DAYS}
               max={MAX_DAYS}
+              step={1}
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
               className="rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] font-medium text-ink"
@@ -79,7 +89,7 @@ export function GenerateBar() {
         </div>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || !canSubmit}
           onClick={() => mutation.mutate()}
           className="mt-7 w-full rounded-full bg-acc px-5 py-3 text-sm font-semibold text-acc-ink disabled:opacity-50"
         >
