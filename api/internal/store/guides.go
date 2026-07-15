@@ -14,6 +14,14 @@ import (
 // to another user (indistinguishable by design).
 var ErrGuideNotFound = errors.New("store: guide not found")
 
+// TMDB omits runtimes for many current shows; a zero-duration item would
+// let the scheduler stack everything at the window start. Assume a
+// typical episode/feature length instead.
+const (
+	defaultSeriesRuntimeMin = 45
+	defaultMovieRuntimeMin  = 120
+)
+
 // Guide mirrors a guides row plus its items.
 type Guide struct {
 	ID        int64       `json:"id"`
@@ -120,6 +128,13 @@ ORDER BY t.id`, userID)
 		var t guide.Title
 		if err := rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Runtime, &t.Airing, &t.Pointer.Season, &t.Pointer.Episode); err != nil {
 			return nil, fmt.Errorf("store: guide input titles: scan: %w", err)
+		}
+		if t.Runtime == 0 {
+			if t.Kind == "movie" {
+				t.Runtime = defaultMovieRuntimeMin
+			} else {
+				t.Runtime = defaultSeriesRuntimeMin
+			}
 		}
 		t.SeasonEpisodes = map[int]int{}
 		idx[t.ID] = len(titles)

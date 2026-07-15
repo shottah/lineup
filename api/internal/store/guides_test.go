@@ -108,6 +108,52 @@ func TestGuideInputTitles(t *testing.T) {
 	}
 }
 
+// TestGuideInputTitlesDefaultRuntime covers titles TMDB reports without a
+// runtime (episode_run_time omitted for many current shows): a zero
+// runtime_minutes must be hydrated to a sane default rather than passed
+// through as 0, which would collapse the scheduler onto the window start.
+func TestGuideInputTitlesDefaultRuntime(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := seedUser(t, s)
+	seriesID := seedTitle(t, s, "Zero Runtime Series")
+	movieID := seedTitle(t, s, "Zero Runtime Movie")
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET kind='movie', runtime_minutes=0 WHERE id=$1`, movieID); err != nil {
+		t.Fatalf("seed movie: %v", err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET runtime_minutes=0 WHERE id=$1`, seriesID); err != nil {
+		t.Fatalf("seed series: %v", err)
+	}
+	for _, tid := range []int64{seriesID, movieID} {
+		if _, err := s.UpsertEntry(ctx, uid, tid, EntryUpdate{Status: strp("rotation")}); err != nil {
+			t.Fatalf("seed rotation: %v", err)
+		}
+	}
+
+	titles, err := s.GuideInputTitles(ctx, uid, "US")
+	if err != nil {
+		t.Fatalf("GuideInputTitles: %v", err)
+	}
+	var ser, mov *guide.Title
+	for i := range titles {
+		switch titles[i].ID {
+		case seriesID:
+			ser = &titles[i]
+		case movieID:
+			mov = &titles[i]
+		}
+	}
+	if ser == nil || mov == nil {
+		t.Fatalf("missing titles: %+v", titles)
+	}
+	if ser.Runtime != 45 {
+		t.Fatalf("series Runtime = %d, want 45", ser.Runtime)
+	}
+	if mov.Runtime != 120 {
+		t.Fatalf("movie Runtime = %d, want 120", mov.Runtime)
+	}
+}
+
 func TestGuideLifecycle(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
