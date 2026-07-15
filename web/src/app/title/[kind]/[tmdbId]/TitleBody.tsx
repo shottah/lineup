@@ -3,6 +3,7 @@
    and an optimization hop (spec 2026-07-15-web-search-title-design.md). */
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { EntryActions } from "@/components/EntryActions";
@@ -10,7 +11,19 @@ import { api, ApiError } from "@/lib/api";
 import { posterUrl } from "@/lib/tmdb";
 import type { TitleFull } from "@/lib/types";
 
+// No-poster mark: first letters of up to three words, uppercase. Mirrors
+// TitleCard's fallback so the two poster slots read as the same system.
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
+  const router = useRouter();
   const { data, error, isPending } = useQuery({
     queryKey: ["title", kind, tmdbId],
     queryFn: () => api<TitleFull>(`/v1/titles/${kind}/${tmdbId}`),
@@ -20,7 +33,7 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   });
 
   if (isPending) {
-    return <p className="p-8 text-sm text-zinc-500">Loading…</p>;
+    return <p className="p-8 text-sm text-mut">Loading…</p>;
   }
   // Error states only when there is nothing to show: a background refetch
   // failure (e.g. after a mutation invalidates this query) keeps rendering
@@ -28,7 +41,7 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   if (!data) {
     const notFound = error instanceof ApiError && error.status === 404;
     return (
-      <p className="p-8 text-sm text-zinc-500">
+      <p className="p-8 text-sm text-mut">
         {notFound ? "Title not found." : "Can't reach the catalog right now — try again shortly."}
       </p>
     );
@@ -38,54 +51,87 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   const poster = posterUrl(title.poster_path, "w342");
 
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-8 p-6 sm:flex-row">
-      {poster ? (
-        <img src={poster} alt={title.name} className="h-fit w-56 shrink-0 rounded-xl" />
-      ) : (
-        <div className="flex aspect-[2/3] w-56 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-xs text-zinc-400 dark:bg-zinc-900">
-          no poster
-        </div>
-      )}
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{title.name}</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          {title.kind === "movie"
-            ? title.runtime_minutes > 0
-              ? `Movie · ${title.runtime_minutes} min`
-              : "Movie"
-            : `Series${
-                seasons.length > 0
-                  ? ` · ${seasons.length} season${seasons.length === 1 ? "" : "s"}`
-                  : ""
-              }${title.airing ? " · airing" : ""}`}
-        </p>
-        {title.overview && (
-          <p className="mt-4 text-sm leading-6 text-zinc-700 dark:text-zinc-300">{title.overview}</p>
-        )}
-
-        <div className="mt-6">
-          <h2 className="text-sm font-medium text-zinc-950 dark:text-zinc-50">Where to watch</h2>
-          {providers.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Not streaming in your region.</p>
+    <main className="mx-auto max-w-[1280px] px-8">
+      <div className="pt-6 pb-8">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="pb-5 text-[13px] font-medium text-mut"
+        >
+          ← Back
+        </button>
+        <div className="flex flex-wrap gap-9">
+          {poster ? (
+            <img
+              src={poster}
+              alt={title.name}
+              className="h-fit w-[220px] shrink-0 rounded-[14px]"
+            />
           ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              {providers.map((p) => {
-                const logo = posterUrl(p.logo_path, "w92");
-                return (
-                  <span
-                    key={p.id}
-                    className="flex items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1 text-sm text-zinc-950 dark:border-zinc-800 dark:text-zinc-50"
-                  >
-                    {logo && <img src={logo} alt="" className="h-5 w-5 rounded" />}
-                    {p.name}
-                  </span>
-                );
-              })}
+            <div className="flex aspect-[2/3] w-[220px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line bg-panel2">
+              <span className="text-xl font-semibold text-faint">{initials(title.name)}</span>
+              <span className="text-[10.5px] text-faint">No poster</span>
             </div>
           )}
-        </div>
+          <div className="flex min-w-[320px] max-w-[640px] flex-1 flex-col gap-3.5">
+            <div>
+              <h1 className="text-[32px] font-semibold leading-[1.1] tracking-tight text-ink">
+                {title.name}
+              </h1>
+              <p className="mt-1.5 text-[13.5px] text-mut">
+                {title.kind === "movie"
+                  ? title.runtime_minutes > 0
+                    ? `Movie · ${title.runtime_minutes} min`
+                    : "Movie"
+                  : `Series${
+                      seasons.length > 0
+                        ? ` · ${seasons.length} season${seasons.length === 1 ? "" : "s"}`
+                        : ""
+                    }${title.airing ? " · airing" : ""}`}
+              </p>
+            </div>
+            {title.overview && (
+              <p className="text-[14.5px] leading-relaxed text-mut">{title.overview}</p>
+            )}
 
-        <EntryActions title={title} entry={entry} kind={kind} tmdbId={tmdbId} />
+            <div>
+              <h2 className="mb-2 text-[10.5px] font-semibold tracking-[.14em] text-faint">
+                WHERE TO WATCH
+              </h2>
+              {providers.length === 0 ? (
+                <p className="text-[13px] text-faint">Not streaming in your region</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {providers.map((p) => {
+                    const logo = posterUrl(p.logo_path, "w92");
+                    return (
+                      <span
+                        key={p.id}
+                        className="flex items-center gap-2 rounded-full border border-line bg-panel py-1.5 pl-[7px] pr-3.5"
+                      >
+                        {logo ? (
+                          <img
+                            src={logo}
+                            alt=""
+                            className="h-[22px] w-[22px] rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-acc-soft text-[11px] font-bold text-acc">
+                            {p.name[0]?.toUpperCase() ?? ""}
+                          </span>
+                        )}
+                        <span className="text-[12.5px] font-medium text-ink">{p.name}</span>
+                        <span className="text-[11px] text-faint">Stream</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <EntryActions title={title} entry={entry} kind={kind} tmdbId={tmdbId} />
+          </div>
+        </div>
       </div>
     </main>
   );
