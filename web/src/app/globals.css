@@ -41,7 +41,6 @@
   --color-acc-soft: var(--accSoft);
   --color-danger: var(--danger);
   --font-sans: var(--font-albert-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono);
 }
 
 button:focus-visible,

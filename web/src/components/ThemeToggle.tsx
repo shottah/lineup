@@ -28,7 +28,13 @@ function getServerSnapshot(): Theme {
 
 function applyTheme(next: Theme) {
   document.documentElement.dataset.lt = next;
-  localStorage.setItem(STORAGE_KEY, next);
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // Storage can fail (private browsing, quota, disabled) — the DOM
+    // attribute above and the listener notification below must still
+    // happen so the UI stays in sync even if persistence doesn't.
+  }
   listeners.forEach((listener) => listener());
 }
 

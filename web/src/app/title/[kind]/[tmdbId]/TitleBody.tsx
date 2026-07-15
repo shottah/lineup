@@ -22,6 +22,15 @@ function initials(name: string): string {
     .join("");
 }
 
+// Spec-mandated runtime display: "Xh Ym" once the film clears an hour
+// (dropping a trailing "0m" on exact multiples), otherwise plain "Xm".
+function formatRuntime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}m`;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+}
+
 export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   const router = useRouter();
   const { data, error, isPending } = useQuery({
@@ -88,7 +97,7 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
               <p className="mt-1.5 text-[13.5px] text-mut">
                 {title.kind === "movie"
                   ? title.runtime_minutes > 0
-                    ? `Movie · ${title.runtime_minutes} min`
+                    ? `Movie · ${formatRuntime(title.runtime_minutes)}`
                     : "Movie"
                   : `Series${
                       seasons.length > 0

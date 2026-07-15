@@ -158,7 +158,9 @@ export function ProfileBody() {
             );
           })}
         </div>
-        {active === "rotation" && <RotationMeter count={rotation.data?.entries.length ?? 0} />}
+        {active === "rotation" && rotation.data && (
+          <RotationMeter count={rotation.data.entries.length} />
+        )}
         <ShelfContent shelf={active} query={queries[active]} />
       </div>
     </main>

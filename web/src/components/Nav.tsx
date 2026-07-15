@@ -23,6 +23,7 @@ export function Nav() {
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -33,7 +34,12 @@ export function Nav() {
       }
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        // Return focus to the trigger so keyboard users don't lose their
+        // place when Escape closes the menu.
+        avatarButtonRef.current?.focus();
+      }
     }
 
     document.addEventListener("mousedown", onPointerDown);
@@ -73,9 +79,12 @@ export function Nav() {
         <ThemeToggle />
         <div ref={menuRef}>
           <button
+            ref={avatarButtonRef}
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="Account"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-acc-soft text-[13px] font-semibold text-acc"
           >
             {initial}

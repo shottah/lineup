@@ -126,6 +126,42 @@ function SettingsForm({ user }: { user: User }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, invalidDays.length, mutation.isPending, mutation.mutate]);
 
+  // Latest form/validity, kept current every render via an effect (refs
+  // can't be written during render itself) so the unmount-only flush below
+  // can read the value as of the last render without depending on it and
+  // re-running.
+  const latestRef = useRef<{ form: FormState; valid: boolean }>({
+    form,
+    valid: invalidDays.length === 0,
+  });
+  useEffect(() => {
+    latestRef.current = { form, valid: invalidDays.length === 0 };
+  });
+
+  const mutateRef = useRef(mutation.mutate);
+  useEffect(() => {
+    mutateRef.current = mutation.mutate;
+  });
+
+  // Data-loss fix: a debounced save queued by the effect above is dropped
+  // if the component unmounts (e.g. the user navigates away) before the
+  // 600ms timer fires. On unmount only, flush the latest valid form if it
+  // hasn't already been attempted. TanStack Query v5 mutations outlive the
+  // unmounted component, so this PATCH still completes even though there's
+  // no one left to show the success toast.
+  useEffect(() => {
+    return () => {
+      const { form: latestForm, valid } = latestRef.current;
+      if (valid && JSON.stringify(latestForm) !== JSON.stringify(lastAttempted.current)) {
+        mutateRef.current({ region: latestForm.region, schedule_prefs: latestForm.prefs });
+      }
+    };
+    // Empty deps are intentional: this must run its cleanup only once, on
+    // unmount. Reading through latestRef/mutateRef (kept current by the
+    // no-dependency effects above, which run after every render) avoids
+    // re-subscribing this effect on every form change.
+  }, []);
+
   return (
     <>
       <div className="flex items-center justify-between gap-4 rounded-[14px] border border-line bg-panel px-5 py-4">
@@ -136,6 +172,7 @@ function SettingsForm({ user }: { user: User }) {
         <select
           value={form.region}
           onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
+          aria-label="Region"
           className="rounded-[10px] border border-line bg-panel2 px-3 py-2 text-[13px] font-medium text-ink"
         >
           {regions.map((code) => (
