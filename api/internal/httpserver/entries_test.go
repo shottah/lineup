@@ -134,35 +134,35 @@ func TestPatchEntryValidation(t *testing.T) {
 }
 
 func TestPatchEntryRotationCap(t *testing.T) {
-	ids := make([]int64, 9)
+	ids := make([]int64, 11)
 	for i := range ids {
 		ids[i] = int64(i + 1)
 	}
 	h, fe := entriesServer(t, ids...)
 
-	for i := int64(1); i <= 8; i++ {
+	for i := int64(1); i <= 10; i++ {
 		rec := do(t, h, http.MethodPatch, fmt.Sprintf("/v1/titles/%d/entry", i), "tok-1", `{"status":"rotation"}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("adding %d = %d (body %s)", i, rec.Code, rec.Body.String())
 		}
 	}
-	// 9th title: cap hit.
-	rec := do(t, h, http.MethodPatch, "/v1/titles/9/entry", "tok-1", `{"status":"rotation"}`)
+	// 11th title: cap hit.
+	rec := do(t, h, http.MethodPatch, "/v1/titles/11/entry", "tok-1", `{"status":"rotation"}`)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "rotation_full") {
-		t.Fatalf("9th rotation = %d body %s, want 409 rotation_full", rec.Code, rec.Body.String())
+		t.Fatalf("11th rotation = %d body %s, want 409 rotation_full", rec.Code, rec.Body.String())
 	}
 	// Re-setting an existing rotation title at cap: idempotent, 200.
 	rec = do(t, h, http.MethodPatch, "/v1/titles/3/entry", "tok-1", `{"status":"rotation"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("idempotent re-set = %d, want 200", rec.Code)
 	}
-	// Other fields untouched by cap: rating a 9th title is fine.
-	rec = do(t, h, http.MethodPatch, "/v1/titles/9/entry", "tok-1", `{"rating":5.0}`)
+	// Other fields untouched by cap: rating an over-cap title is fine.
+	rec = do(t, h, http.MethodPatch, "/v1/titles/11/entry", "tok-1", `{"rating":5.0}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("rating at cap = %d, want 200", rec.Code)
 	}
-	if fe.entries[9] != nil && fe.entries[9].Status == "rotation" {
-		t.Fatal("9th title must not have entered rotation")
+	if fe.entries[11] != nil && fe.entries[11].Status == "rotation" {
+		t.Fatal("11th title must not have entered rotation")
 	}
 }
 
