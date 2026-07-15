@@ -42,7 +42,7 @@ export function SearchBody() {
       ) : error ? (
         <p className="mt-8 text-sm text-red-600">Search is unavailable right now.</p>
       ) : !data || data.results.length === 0 ? (
-        <p className="mt-8 text-sm text-zinc-500">Nothing found for &quot;{q}&quot;.</p>
+        <p className="mt-8 text-sm text-zinc-500">Nothing found for “{q}”.</p>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {data.results.map((r) => (
