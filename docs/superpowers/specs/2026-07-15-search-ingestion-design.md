@@ -112,8 +112,9 @@ the authed `/v1` group:
 
 - `GET /v1/search?q=` — trimmed empty `q` → 422 (existing error
   envelope); otherwise thin proxy, NO DB writes. Response:
-  `{"results":[{"tmdbId","kind","name","overview","posterPath","year"}]}`
-  in TMDB's order, first page only. Upstream failure → 502.
+  `{"results":[{"tmdb_id","kind","name","overview","poster_path","year"}]}`
+  (snake_case, matching every other endpoint's JSON) in TMDB's order,
+  first page only. Upstream failure → 502.
 - `GET /v1/titles/{kind}/{tmdbID}` — kind not `movie|series` or
   unparseable id → 404 (route vocabulary, matching guide handlers);
   `EnsureTitle(kind, id, userFrom(ctx).Region)`; `ErrTitleNotFound` →
