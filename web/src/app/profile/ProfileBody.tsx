@@ -7,6 +7,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { TitleCard, type TitleCardData } from "@/components/TitleCard";
 import { api } from "@/lib/api";
 import type { Entry, ShelfName, ShelfResponse } from "@/lib/types";
+import { WatchlistQuickActions } from "./WatchlistQuickActions";
 
 const TABS: { shelf: ShelfName; label: string }[] = [
   { shelf: "watchlist", label: "Watchlist" },
@@ -16,7 +17,7 @@ const TABS: { shelf: ShelfName; label: string }[] = [
   { shelf: "ratings", label: "Ratings" },
 ];
 
-const ROTATION_CAP = 8;
+const ROTATION_CAP = 10;
 
 const EMPTY_COPY: Record<ShelfName, ReactNode> = {
   watchlist: (
@@ -110,9 +111,16 @@ function ShelfContent({
   }
   return (
     <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
-      {data.entries.map((e) => (
-        <TitleCard key={e.title_id} title={cardData(e)} badge={badgeFor(shelf, e)} captionless />
-      ))}
+      {data.entries.map((e) =>
+        shelf === "watchlist" ? (
+          <div key={e.title_id} className="group relative">
+            <TitleCard title={cardData(e)} badge={badgeFor(shelf, e)} captionless />
+            <WatchlistQuickActions entry={e} />
+          </div>
+        ) : (
+          <TitleCard key={e.title_id} title={cardData(e)} badge={badgeFor(shelf, e)} captionless />
+        ),
+      )}
     </div>
   );
 }

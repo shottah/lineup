@@ -20,8 +20,8 @@ type EntryStore interface {
 	Shelf(ctx context.Context, userID int64, shelf string) ([]store.Entry, error)
 }
 
-// rotationCap is fixed at 8 in v1 (design spec).
-const rotationCap = 8
+// rotationCap was 8 in the v1 design spec; raised to 10 (issue #41).
+const rotationCap = 10
 
 var validStatuses = map[string]bool{"none": true, "watchlist": true, "rotation": true, "watched": true}
 

@@ -50,7 +50,7 @@ export function EntryActions({
       }),
     onError: (err) => {
       if (err instanceof ApiError && err.status === 409 && err.code === "rotation_full") {
-        show("Rotation is full (8); finish something first.");
+        show("Rotation is full (10); finish something first.");
       } else {
         show("Couldn't save — try again.");
       }
