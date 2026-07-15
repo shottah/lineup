@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	firebase.google.com/go/v4 v4.20.0
 	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/cors v1.2.2
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/jackc/pgx/v5 v5.5.4
 	golang.org/x/time v0.15.0

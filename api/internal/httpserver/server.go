@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/shottah/lineup/api/internal/fbauth"
 	"github.com/shottah/lineup/api/internal/store"
@@ -29,6 +30,17 @@ func New(d Deps) *http.Server {
 		d.Now = time.Now
 	}
 	r := chi.NewRouter()
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"https://lineup-app-ae6b.web.app",
+			"https://lineup-app-ae6b.firebaseapp.com",
+		},
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Authorization", "Content-Type"},
+		MaxAge:         300,
+	}))
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
