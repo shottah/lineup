@@ -10,12 +10,18 @@ import (
 	"github.com/shottah/lineup/api/internal/fbauth"
 )
 
+// fakeVerifierWithTok1 returns a fbauth.Fake accepting "tok-1" for uid-1,
+// shared by testServer and entriesServer.
+func fakeVerifierWithTok1() *fbauth.Fake {
+	return &fbauth.Fake{Tokens: map[string]fbauth.Identity{
+		"tok-1": {UID: "uid-1", Email: "one@example.com", DisplayName: "One"},
+	}}
+}
+
 func testServer(t *testing.T) (http.Handler, *fakeUsers) {
 	t.Helper()
 	users := newFakeUsers()
-	verifier := &fbauth.Fake{Tokens: map[string]fbauth.Identity{
-		"tok-1": {UID: "uid-1", Email: "one@example.com", DisplayName: "One"},
-	}}
+	verifier := fakeVerifierWithTok1()
 	srv := New(Deps{Users: users, Verifier: verifier})
 	return srv.Handler, users
 }

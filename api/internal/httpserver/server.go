@@ -3,6 +3,7 @@ package httpserver
 import (
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,9 +17,18 @@ type Deps struct {
 	Store    *store.Store
 	Users    UserStore
 	Verifier fbauth.TokenVerifier
+	Entries  EntryStore
+	Guides   GuideStore
+	Search   SearchClient
+	Ingest   Ingester
+	Titles   TitleReader
+	Now      func() time.Time
 }
 
 func New(d Deps) *http.Server {
+	if d.Now == nil {
+		d.Now = time.Now
+	}
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{
@@ -41,6 +51,26 @@ func New(d Deps) *http.Server {
 			v1.Use(requireAuth(d.Verifier, d.Users))
 			v1.Get("/me", handleGetMe)
 			v1.Patch("/me", handlePatchMe(d.Users))
+			if d.Entries != nil {
+				v1.Patch("/titles/{id}/entry", handlePatchEntry(d.Entries))
+				v1.Get("/me/shelves/{shelf}", handleGetShelf(d.Entries))
+			}
+			if d.Search != nil {
+				v1.Get("/search", handleSearch(d.Search))
+			}
+			if d.Ingest != nil && d.Titles != nil {
+				v1.Get("/titles/{kind}/{tmdbID}", handleGetTitle(d.Ingest, d.Titles))
+			}
+			if d.Guides != nil {
+				v1.Post("/guides", handleCreateGuide(d))
+				v1.Get("/guides/current", handleCurrentGuide(d))
+				v1.Route("/guides/{id}", func(gr chi.Router) {
+					gr.Post("/regenerate", handleRegenerate(d))
+					gr.Patch("/items/{itemID}", handlePatchItem(d))
+					gr.Delete("/items/{itemID}", handleDeleteItem(d))
+					gr.Post("/items/{itemID}/watched", handleWatchItem(d))
+				})
+			}
 		})
 	}
 	port := os.Getenv("PORT")

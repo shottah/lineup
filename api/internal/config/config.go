@@ -8,11 +8,12 @@ import (
 
 // Config holds process configuration. DatabaseURL and FirebaseProjectID are
 // required; the rest are optional until the features that consume them land
-// (TMDBKey: task 9, Port: consumed directly by httpserver.New, which already
+// (TMDBReadToken: consumed by ingestion (#11); Port: consumed directly by
+// httpserver.New, which already
 // defaults it to 8080 when unset).
 type Config struct {
 	DatabaseURL       string
-	TMDBKey           string
+	TMDBReadToken     string
 	FirebaseProjectID string
 	Port              string
 }
@@ -31,7 +32,7 @@ var ErrMissingFirebaseProjectID = errors.New("config: FIREBASE_PROJECT_ID is req
 func Load() (Config, error) {
 	cfg := Config{
 		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		TMDBKey:           os.Getenv("TMDB_API_KEY"),
+		TMDBReadToken:     os.Getenv("TMDB_READ_TOKEN"),
 		FirebaseProjectID: os.Getenv("FIREBASE_PROJECT_ID"),
 		Port:              os.Getenv("PORT"),
 	}

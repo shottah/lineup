@@ -37,7 +37,7 @@ Running the script against the project ID above (idempotent — safe to re-run):
 - Creates an Artifact Registry Docker repo named `api` in `us-central1`
 - Creates two Secret Manager secrets:
   - `db-password` — auto-generated random value (24 bytes, base64)
-  - `tmdb-api-key` — placeholder value `REPLACE_ME` (see manual step below)
+  - `tmdb-read-token` — placeholder value `REPLACE_ME` (see manual step below)
 - Creates a service account `api-runtime@<PROJECT_ID>.iam.gserviceaccount.com`
 - Grants `api-runtime@` the `roles/secretmanager.secretAccessor` role at the project level
 
@@ -112,10 +112,11 @@ auth is Firebase ID tokens, added in a later task.
     --role=roles/secretmanager.admin -q
   ```
 
-- [ ] **Replace the placeholder TMDB API key** with the real value:
+- [ ] **Replace the placeholder TMDB read token** (v4 read access token, sent
+  as a Bearer header — not the v3 api key) with the real value:
 
   ```bash
-  printf '%s' 'YOUR_REAL_TMDB_KEY' | gcloud secrets versions add tmdb-api-key --data-file=- --project lineup-app-ae6b
+  printf '%s' "$(cat ~/.lineup/tmdb_read_token)" | gcloud secrets versions add tmdb-read-token --data-file=- --project lineup-app-ae6b
   ```
 
 - [ ] Firebase Auth + App Hosting setup — follow `infra/firebase.md` (health-gated runbook; the `projects:addfirebase` step is irreversible).

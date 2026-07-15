@@ -1,0 +1,54 @@
+{
+  "id": 1399,
+  "results": {
+    "US": {
+      "link": "https://www.themoviedb.org/tv/1399-game-of-thrones/watch?locale=US",
+      "flatrate": [
+        {
+          "logo_path": "/embS4GPK7c8pjbuY2O2irV5rYch.jpg",
+          "provider_id": 1825,
+          "provider_name": "HBO Max Amazon Channel",
+          "display_priority": 11
+        },
+        {
+          "logo_path": "/x9zOHTUkQzt3PgPVKbMH9CKBwLK.jpg",
+          "provider_id": 2528,
+          "provider_name": "YouTube TV",
+          "display_priority": 39
+        },
+        {
+          "logo_path": "/jbe4gVSfRlbPTdESXhEKpornsfu.jpg",
+          "provider_id": 1899,
+          "provider_name": "HBO Max",
+          "display_priority": 155
+        }
+      ],
+      "buy": [
+        {
+          "logo_path": "/qR6FKvnPBx2O37FDg8PNM7efwF3.jpg",
+          "provider_id": 10,
+          "provider_name": "Amazon Video",
+          "display_priority": 8
+        },
+        {
+          "logo_path": "/SPnB1qiCkYfirS2it3hZORwGVn.jpg",
+          "provider_id": 2,
+          "provider_name": "Apple TV Store",
+          "display_priority": 9
+        },
+        {
+          "logo_path": "/8z7rC8uIDaTM91X0ZfkRf04ydj2.jpg",
+          "provider_id": 3,
+          "provider_name": "Google Play Movies",
+          "display_priority": 19
+        },
+        {
+          "logo_path": "/oIXE9vJdkilIxCLAtlbtiqewgvn.jpg",
+          "provider_id": 7,
+          "provider_name": "Fandango At Home",
+          "display_priority": 38
+        }
+      ]
+    }
+  }
+}
