@@ -87,6 +87,19 @@ func TestReplaceSeasons(t *testing.T) {
 	if len(full.Seasons) != 1 || full.Seasons[0].Number != 1 || full.Seasons[0].EpisodeCount != 11 {
 		t.Fatalf("seasons after replace = %+v", full.Seasons)
 	}
+
+	// Duplicate season numbers in one payload must not abort the tx —
+	// last write wins, matching upsert semantics.
+	if err := s.ReplaceSeasons(ctx, ti.ID, []SeasonRow{{Number: 3, EpisodeCount: 8}, {Number: 3, EpisodeCount: 9}}); err != nil {
+		t.Fatalf("duplicate season numbers: %v", err)
+	}
+	full, err = s.GetTitleFull(ctx, seedUser(t, s), ti.ID, "US")
+	if err != nil {
+		t.Fatalf("full after dup: %v", err)
+	}
+	if len(full.Seasons) != 1 || full.Seasons[0].EpisodeCount != 9 {
+		t.Fatalf("seasons after dup replace = %+v, want one row with 9 episodes", full.Seasons)
+	}
 }
 
 func TestReplaceProvidersRegionScoped(t *testing.T) {
@@ -126,6 +139,18 @@ func TestReplaceProvidersRegionScoped(t *testing.T) {
 	}
 	if !us.Title.ProvidersRefreshedAt.After(before) {
 		t.Fatalf("providers_refreshed_at not stamped: %v", us.Title.ProvidersRefreshedAt)
+	}
+
+	// Duplicate provider ids in one payload must not abort the tx.
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 10, Name: "Dup", LogoPath: "/d.jpg"}, {ID: 10, Name: "Dup", LogoPath: "/d.jpg"}}); err != nil {
+		t.Fatalf("duplicate provider ids: %v", err)
+	}
+	us, err = s.GetTitleFull(ctx, uid, ti.ID, "US")
+	if err != nil {
+		t.Fatalf("full after dup: %v", err)
+	}
+	if len(us.Providers) != 1 || us.Providers[0].ID != 10 {
+		t.Fatalf("US providers after dup replace = %+v, want single id-10 row", us.Providers)
 	}
 }
 

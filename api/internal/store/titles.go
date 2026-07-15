@@ -131,8 +131,9 @@ func (s *Store) ReplaceSeasons(ctx context.Context, titleID int64, seasons []Sea
 		return fmt.Errorf("store: replace seasons: delete: %w", err)
 	}
 	for _, se := range seasons {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO title_seasons (title_id, season_number, episode_count) VALUES ($1, $2, $3)`,
+		if _, err := tx.Exec(ctx, `
+INSERT INTO title_seasons (title_id, season_number, episode_count) VALUES ($1, $2, $3)
+ON CONFLICT (title_id, season_number) DO UPDATE SET episode_count = EXCLUDED.episode_count`,
 			titleID, se.Number, se.EpisodeCount); err != nil {
 			return fmt.Errorf("store: replace seasons: insert: %w", err)
 		}
@@ -165,8 +166,9 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, logo_path = EXCLUDED.logo_p
 		return fmt.Errorf("store: replace providers: delete: %w", err)
 	}
 	for _, p := range provs {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO title_providers (title_id, region, provider_id) VALUES ($1, $2, $3)`,
+		if _, err := tx.Exec(ctx, `
+INSERT INTO title_providers (title_id, region, provider_id) VALUES ($1, $2, $3)
+ON CONFLICT (title_id, region, provider_id) DO NOTHING`,
 			titleID, region, p.ID); err != nil {
 			return fmt.Errorf("store: replace providers: insert: %w", err)
 		}
