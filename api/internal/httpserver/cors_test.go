@@ -47,6 +47,29 @@ func TestCORSPreflight(t *testing.T) {
 	}
 }
 
+// The guide endpoints (#32, merged after this middleware was written)
+// include DELETE /v1/guides/{id}/items/{itemID}; the browser's preflight
+// must see DELETE among the allowed methods or the web app cannot remove
+// guide items.
+func TestCORSPreflightDelete(t *testing.T) {
+	srv := New(Deps{
+		Verifier: &fbauth.Fake{Tokens: map[string]fbauth.Identity{}},
+		Users:    newFakeUsers(),
+	})
+	req := httptest.NewRequest(http.MethodOptions, "/v1/guides/1/items/2", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "DELETE")
+	req.Header.Set("Access-Control-Request-Headers", "Authorization")
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Fatalf("ACAO = %q, want origin echoed (DELETE must be an allowed method)", got)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preflight status = %d, want 200", rec.Code)
+	}
+}
+
 func TestCORSActualRequestHeader(t *testing.T) {
 	srv := New(Deps{})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)

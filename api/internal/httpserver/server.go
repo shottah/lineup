@@ -37,7 +37,7 @@ func New(d Deps) *http.Server {
 			"https://lineup-app-ae6b.web.app",
 			"https://lineup-app-ae6b.firebaseapp.com",
 		},
-		AllowedMethods: []string{"GET", "POST", "PATCH", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Authorization", "Content-Type"},
 		MaxAge:         300,
 	}))
