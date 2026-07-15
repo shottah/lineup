@@ -87,3 +87,11 @@ export type TitleFull = {
   providers: ProviderRow[];
   entry: Entry | null;
 };
+
+// --- Profile shelves (#17). Mirrors /v1/me/shelves/{shelf}.
+
+export type ShelfName = "watchlist" | "rotation" | "watched" | "favorites" | "ratings";
+
+export type ShelfResponse = {
+  entries: Entry[];
+};
