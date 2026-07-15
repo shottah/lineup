@@ -122,6 +122,7 @@ func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, re
 			if err := s.Store.ReplaceProviders(ctx, title.ID, region, rows); err != nil {
 				return nil, err
 			}
+			title.ProvidersRefreshedAt = s.now()
 		}
 	}
 
@@ -202,5 +203,6 @@ func (s *Service) ensureAirings(ctx context.Context, title *store.Title, imdbID 
 	if err := s.Store.ReplaceFutureAirings(ctx, title.ID, today, rows); err != nil {
 		return title
 	}
+	title.AiringsRefreshedAt = s.now()
 	return title
 }

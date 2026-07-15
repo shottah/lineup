@@ -309,8 +309,12 @@ func TestProvidersRefreshOnly(t *testing.T) {
 	cached.ProvidersRefreshedAt = now.Add(-8 * 24 * time.Hour) // stale providers
 	tm := &fakeTMDB{provs: []tmdb.Provider{{ID: 8, Name: "Netflix"}}}
 	tv, st := &fakeTVMaze{}, &fakeStore{title: cached}
-	if _, err := svc(tm, tv, st).EnsureTitle(context.Background(), "series", 1399, "GB"); err != nil {
+	ti, err := svc(tm, tv, st).EnsureTitle(context.Background(), "series", 1399, "GB")
+	if err != nil {
 		t.Fatalf("EnsureTitle: %v", err)
+	}
+	if !ti.ProvidersRefreshedAt.Equal(now) {
+		t.Fatalf("returned ProvidersRefreshedAt = %v, want %v (stamped by this call)", ti.ProvidersRefreshedAt, now)
 	}
 	if tm.tvCalls != 0 || tm.provCalls != 1 || tv.epsCalls != 0 {
 		t.Fatalf("calls: tv=%d prov=%d eps=%d, want 0/1/0", tm.tvCalls, tm.provCalls, tv.epsCalls)
@@ -326,8 +330,12 @@ func TestAiringsRefreshOnly(t *testing.T) {
 	tm := &fakeTMDB{}
 	tv := &fakeTVMaze{eps: []tvmaze.Episode{{Season: 9, Number: 4, AirDate: "2026-09-01"}}}
 	st := &fakeStore{title: cached}
-	if _, err := svc(tm, tv, st).EnsureTitle(context.Background(), "series", 1399, "US"); err != nil {
+	ti, err := svc(tm, tv, st).EnsureTitle(context.Background(), "series", 1399, "US")
+	if err != nil {
 		t.Fatalf("EnsureTitle: %v", err)
+	}
+	if !ti.AiringsRefreshedAt.Equal(now) {
+		t.Fatalf("returned AiringsRefreshedAt = %v, want %v (stamped by this call)", ti.AiringsRefreshedAt, now)
 	}
 	if tv.lookupCalls != 0 || tv.epsCalls != 1 || tm.tvCalls != 0 || tm.provCalls != 0 {
 		t.Fatalf("calls: lookup=%d eps=%d tv=%d prov=%d, want 0/1/0/0", tv.lookupCalls, tv.epsCalls, tm.tvCalls, tm.provCalls)
@@ -393,3 +401,13 @@ func TestRefreshProvidersDownServesCache(t *testing.T) {
 }
 
 func int64p(v int64) *int64 { return &v }
+
+func TestRefreshStoreWriteFailureErrors(t *testing.T) {
+	cached := airingSeries(int64p(82))
+	cached.ProvidersRefreshedAt = now.Add(-8 * 24 * time.Hour)
+	tm := &fakeTMDB{provs: []tmdb.Provider{{ID: 8, Name: "Netflix"}}}
+	st := &fakeStore{title: cached, provsErr: errors.New("db down")}
+	if _, err := svc(tm, &fakeTVMaze{}, st).EnsureTitle(context.Background(), "series", 1399, "US"); err == nil {
+		t.Fatal("store write failure must be a real error, not served-stale")
+	}
+}
