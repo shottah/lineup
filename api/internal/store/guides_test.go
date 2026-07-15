@@ -108,6 +108,52 @@ func TestGuideInputTitles(t *testing.T) {
 	}
 }
 
+// TestGuideInputTitlesDefaultRuntime covers titles TMDB reports without a
+// runtime (episode_run_time omitted for many current shows): a zero
+// runtime_minutes must be hydrated to a sane default rather than passed
+// through as 0, which would collapse the scheduler onto the window start.
+func TestGuideInputTitlesDefaultRuntime(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := seedUser(t, s)
+	seriesID := seedTitle(t, s, "Zero Runtime Series")
+	movieID := seedTitle(t, s, "Zero Runtime Movie")
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET kind='movie', runtime_minutes=0 WHERE id=$1`, movieID); err != nil {
+		t.Fatalf("seed movie: %v", err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET runtime_minutes=0 WHERE id=$1`, seriesID); err != nil {
+		t.Fatalf("seed series: %v", err)
+	}
+	for _, tid := range []int64{seriesID, movieID} {
+		if _, err := s.UpsertEntry(ctx, uid, tid, EntryUpdate{Status: strp("rotation")}); err != nil {
+			t.Fatalf("seed rotation: %v", err)
+		}
+	}
+
+	titles, err := s.GuideInputTitles(ctx, uid, "US")
+	if err != nil {
+		t.Fatalf("GuideInputTitles: %v", err)
+	}
+	var ser, mov *guide.Title
+	for i := range titles {
+		switch titles[i].ID {
+		case seriesID:
+			ser = &titles[i]
+		case movieID:
+			mov = &titles[i]
+		}
+	}
+	if ser == nil || mov == nil {
+		t.Fatalf("missing titles: %+v", titles)
+	}
+	if ser.Runtime != 45 {
+		t.Fatalf("series Runtime = %d, want 45", ser.Runtime)
+	}
+	if mov.Runtime != 120 {
+		t.Fatalf("movie Runtime = %d, want 120", mov.Runtime)
+	}
+}
+
 func TestGuideLifecycle(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
@@ -444,5 +490,69 @@ func TestMarkItemWatchedExactPointerAdvance(t *testing.T) {
 	e = entryOf(t, s, uid, seriesID)
 	if e.Pointer != (Pointer{Season: 1, Episode: 2}) {
 		t.Fatalf("pointer after re-watch = %+v, want unchanged 1/2", e.Pointer)
+	}
+}
+
+// TestGuideLookups guards #18: the sidecar dictionaries must resolve every
+// distinct title/provider id referenced by a guide's items, with the right
+// name/kind/tmdb_id (titles) and name/logo_path (providers) — the data the
+// web guide views render without extra round trips.
+func TestGuideLookups(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, movieID := seedGuideWorld(t, s) // series on US:901, movie on US:902
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		{Date: "2026-01-06", StartMin: 1140, EndMin: 1300, TitleID: movieID, Provider: 902, IsPlan: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	titles, provs, err := s.GuideLookups(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("GuideLookups: %v", err)
+	}
+	if len(titles) != 2 {
+		t.Fatalf("titles = %d, want 2: %+v", len(titles), titles)
+	}
+	if len(provs) != 2 {
+		t.Fatalf("providers = %d, want 2: %+v", len(provs), provs)
+	}
+
+	var seriesRow Title
+	if err := s.Pool.QueryRow(ctx, `SELECT tmdb_id FROM titles WHERE id = $1`, seriesID).Scan(&seriesRow.TMDBID); err != nil {
+		t.Fatalf("seeded series tmdb_id: %v", err)
+	}
+	ser, ok := titles[seriesID]
+	if !ok || ser.Name != "Guide Series" || ser.Kind != "series" || ser.TMDBID != seriesRow.TMDBID {
+		t.Fatalf("titles[seriesID] = %+v, want name=Guide Series kind=series tmdb_id=%d", ser, seriesRow.TMDBID)
+	}
+	var movieRow Title
+	if err := s.Pool.QueryRow(ctx, `SELECT tmdb_id FROM titles WHERE id = $1`, movieID).Scan(&movieRow.TMDBID); err != nil {
+		t.Fatalf("seeded movie tmdb_id: %v", err)
+	}
+	mov, ok := titles[movieID]
+	if !ok || mov.Name != "Guide Movie" || mov.Kind != "movie" || mov.TMDBID != movieRow.TMDBID {
+		t.Fatalf("titles[movieID] = %+v, want name=Guide Movie kind=movie tmdb_id=%d", mov, movieRow.TMDBID)
+	}
+
+	p901, ok := provs[901]
+	if !ok || p901.Name != "P901" {
+		t.Fatalf("providers[901] = %+v, want name=P901", p901)
+	}
+	p902, ok := provs[902]
+	if !ok || p902.Name != "P902" {
+		t.Fatalf("providers[902] = %+v, want name=P902", p902)
+	}
+
+	// An empty/unknown guide id resolves to empty (not nil) maps.
+	emptyTitles, emptyProvs, err := s.GuideLookups(ctx, g.ID+999999)
+	if err != nil {
+		t.Fatalf("GuideLookups (unknown guide): %v", err)
+	}
+	if len(emptyTitles) != 0 || len(emptyProvs) != 0 {
+		t.Fatalf("unknown guide lookups = %+v/%+v, want empty", emptyTitles, emptyProvs)
 	}
 }

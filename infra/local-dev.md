@@ -44,6 +44,13 @@ Any non-empty `key=` works against the emulator. Use the token as
 
 ## Store integration tests
 
-    cd api && TEST_DATABASE_URL='postgres://lineup:lineup@localhost:5433/lineup?sslmode=disable' go test ./internal/store/
+    docker exec lineup-pg psql -U lineup -d lineup -c 'CREATE DATABASE lineup_test OWNER lineup;'  # once
+    cd api && TEST_DATABASE_URL='postgres://lineup:lineup@localhost:5433/lineup_test?sslmode=disable' go test ./internal/store/
 
 Skipped automatically when `TEST_DATABASE_URL` is unset (CI stays hermetic).
+
+NEVER point `TEST_DATABASE_URL` at the dev database (`/lineup`): the tests
+write fixture titles, guides, and provider rows into whatever database they
+are given, and they once renamed the real Netflix provider row out from
+under the running app. `lineup_test` exists so test data and dev data never
+share a schema.

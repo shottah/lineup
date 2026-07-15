@@ -3,8 +3,10 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +58,11 @@ type fakeGuides struct {
 	updateArgs *store.GuideItemUpdate
 
 	swapInfo map[int64]*store.SwapInfo
+
+	// lastGuide is the most recent guide handed back by one of the three
+	// wrapped responses (create/current/regenerate), for GuideLookups to
+	// derive its sidecar maps from.
+	lastGuide *store.Guide
 }
 
 func newFakeGuides() *fakeGuides {
@@ -120,7 +127,9 @@ func (f *fakeGuides) GuideInputTitles(_ context.Context, _ int64, _ string) ([]g
 
 func (f *fakeGuides) CreateGuideReplacingOverlaps(_ context.Context, userID int64, startDate, endDate string, seed int64, items []guide.Item) (*store.Guide, error) {
 	f.createArgs = &createCall{userID: userID, startDate: startDate, endDate: endDate, seed: seed, items: items}
-	return &store.Guide{ID: 1, StartDate: startDate, EndDate: endDate, Seed: seed, Items: toStoreItems(items, 100)}, nil
+	g := &store.Guide{ID: 1, StartDate: startDate, EndDate: endDate, Seed: seed, Items: toStoreItems(items, 100)}
+	f.lastGuide = g
+	return g, nil
 }
 
 func (f *fakeGuides) CurrentGuide(_ context.Context, _ int64, today string) (*store.Guide, error) {
@@ -128,6 +137,7 @@ func (f *fakeGuides) CurrentGuide(_ context.Context, _ int64, today string) (*st
 	if f.currentErr != nil {
 		return nil, f.currentErr
 	}
+	f.lastGuide = f.currentResult
 	return f.currentResult, nil
 }
 
@@ -145,7 +155,26 @@ func (f *fakeGuides) GuideWithItems(_ context.Context, userID, guideID int64) (*
 
 func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*store.Guide, error) {
 	f.replaceArgs = &replaceCall{userID: userID, guideID: guideID, keepIDs: keepIDs, newItems: newItems}
-	return &store.Guide{ID: guideID, Items: toStoreItems(newItems, 1000)}, nil
+	g := &store.Guide{ID: guideID, Items: toStoreItems(newItems, 1000)}
+	f.lastGuide = g
+	return g, nil
+}
+
+// GuideLookups derives sidecar maps from whatever guide was last handed back
+// by one of the three wrapped responses (#18), mirroring just enough of the
+// real store method's shape for handler tests: every item's title/provider
+// id resolves to a non-empty fixture entry.
+func (f *fakeGuides) GuideLookups(_ context.Context, guideID int64) (map[int64]store.TitleLookup, map[int64]store.ProviderRow, error) {
+	titles := map[int64]store.TitleLookup{}
+	provs := map[int64]store.ProviderRow{}
+	if f.lastGuide == nil || f.lastGuide.ID != guideID {
+		return titles, provs, nil
+	}
+	for _, it := range f.lastGuide.Items {
+		titles[it.TitleID] = store.TitleLookup{Name: fmt.Sprintf("Title %d", it.TitleID), Kind: "series", TMDBID: it.TitleID + 100000}
+		provs[it.ProviderID] = store.ProviderRow{ID: it.ProviderID, Name: fmt.Sprintf("Provider %d", it.ProviderID), LogoPath: ""}
+	}
+	return titles, provs, nil
 }
 
 func (f *fakeGuides) UpdateGuideItem(_ context.Context, userID, guideID, itemID int64, upd store.GuideItemUpdate) (*store.GuideItem, error) {
@@ -309,6 +338,10 @@ func TestCreateGuideHappyPath(t *testing.T) {
 	rec := do(t, h, http.MethodPost, "/v1/guides", "tok-1", `{"start_date":"2026-01-05","days":4}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d, want 201 (body %s)", rec.Code, rec.Body.String())
+	}
+	// writeGuide must set Content-Type before WriteHeader to ensure header ships with 201 response.
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", rec.Header().Get("Content-Type"))
 	}
 	if fg.createArgs == nil {
 		t.Fatal("CreateGuideReplacingOverlaps was not called")
@@ -667,5 +700,44 @@ func TestWatchItem(t *testing.T) {
 	rec2 := do(t, h, http.MethodPost, "/v1/guides/1/items/999/watched", "tok-1", "")
 	if rec2.Code != http.StatusNotFound {
 		t.Fatalf("watch unknown = %d, want 404", rec2.Code)
+	}
+}
+
+// TestCurrentGuideCarriesSidecars guards #18: guide-returning responses must
+// carry titles/providers rendering dictionaries alongside the bare items, so
+// the web guide views can resolve names/kinds/tmdb_ids/logos without extra
+// round trips.
+func TestCurrentGuideCarriesSidecars(t *testing.T) {
+	fg := newFakeGuides()
+	fg.currentResult = &store.Guide{ID: 5, StartDate: "2026-01-05", EndDate: "2026-01-11", Seed: 42, Items: []store.GuideItem{
+		{ID: 1, Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: 10, ProviderID: 20, IsPlan: true},
+		{ID: 2, Date: "2026-01-06", StartMin: 1140, EndMin: 1200, TitleID: 11, ProviderID: 21, IsPlan: true},
+	}}
+	h := guidesServer(t, fg)
+
+	rec := do(t, h, http.MethodGet, "/v1/guides/current", "tok-1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("current = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items     []store.GuideItem            `json:"items"`
+		Titles    map[string]store.TitleLookup `json:"titles"`
+		Providers map[string]store.ProviderRow `json:"providers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items = %d, want 2", len(body.Items))
+	}
+	for _, it := range body.Items {
+		tl, ok := body.Titles[strconv.FormatInt(it.TitleID, 10)]
+		if !ok || tl.Name == "" {
+			t.Fatalf("titles[%d] missing/empty: %+v", it.TitleID, body.Titles)
+		}
+		pr, ok := body.Providers[strconv.FormatInt(it.ProviderID, 10)]
+		if !ok || pr.Name == "" {
+			t.Fatalf("providers[%d] missing/empty: %+v", it.ProviderID, body.Providers)
+		}
 	}
 }

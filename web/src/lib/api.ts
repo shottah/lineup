@@ -40,5 +40,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, code);
   }
+  // 204 No Content (DELETE) has no body — res.json() would throw on the
+  // empty string. First caller to hit this: ItemMenu's Remove action.
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }

@@ -95,3 +95,36 @@ export type ShelfName = "watchlist" | "rotation" | "watched" | "favorites" | "ra
 export type ShelfResponse = {
   entries: Entry[];
 };
+
+// --- Guide (#18). Mirrors /v1/guides JSON incl. the sidecar maps.
+
+export type GuideItem = {
+  id: number;
+  date: string; // "YYYY-MM-DD"
+  start_min: number; // minutes from midnight
+  end_min: number;
+  title_id: number;
+  season: number;
+  episode: number;
+  provider_id: number;
+  is_plan: boolean;
+  pinned: boolean;
+  edited: boolean;
+  watched: boolean;
+};
+
+export type GuideTitleLookup = {
+  name: string;
+  kind: "movie" | "series";
+  tmdb_id: number;
+};
+
+export type GuideResponse = {
+  id: number;
+  start_date: string;
+  end_date: string;
+  seed: number; // UnixNano exceeds 2^53; JSON parsing truncates it. Display/echo only — never round-trip.
+  items: GuideItem[];
+  titles: Record<string, GuideTitleLookup>;
+  providers: Record<string, ProviderRow>;
+};
