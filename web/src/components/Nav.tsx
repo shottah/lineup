@@ -14,9 +14,17 @@ export function Nav() {
 
   return (
     <nav className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-      <Link href="/guide" className="font-semibold text-zinc-950 dark:text-zinc-50">
-        Lineup
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link href="/guide" className="font-semibold text-zinc-950 dark:text-zinc-50">
+          Lineup
+        </Link>
+        <Link
+          href="/search"
+          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
+        >
+          Search
+        </Link>
+      </div>
       <div className="flex items-center gap-4 text-sm">
         <span className="text-zinc-500">{user?.email}</span>
         <button
