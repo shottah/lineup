@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { TitleCard } from "@/components/TitleCard";
 import { api } from "@/lib/api";
@@ -24,6 +24,11 @@ export function SearchBody() {
     queryKey: ["search", q],
     queryFn: () => api<SearchResponse>(`/v1/search?q=${encodeURIComponent(q)}`),
     enabled: q !== "",
+    // Keep the previous grid rendered while the next debounced query
+    // loads, and cap retries like the title query (default is 3 with
+    // exponential backoff — ~15s of "Searching…" when the API is down).
+    placeholderData: keepPreviousData,
+    retry: 2,
   });
 
   return (
@@ -48,7 +53,7 @@ export function SearchBody() {
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {data.results.map((r) => (
-            <TitleCard key={`${r.kind}-${r.tmdb_id}`} result={r} />
+            <TitleCard key={`${r.kind}-${r.tmdb_id}`} title={r} />
           ))}
         </div>
       )}
