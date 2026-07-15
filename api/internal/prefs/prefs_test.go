@@ -73,3 +73,27 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestWindows(t *testing.T) {
+	got, err := Windows(Default())
+	if err != nil {
+		t.Fatalf("Windows(Default()): %v", err)
+	}
+	if len(got) != 7 {
+		t.Fatalf("windows = %d, want 7", len(got))
+	}
+	if w := got["mon"]; !w.Enabled || w.StartMin != 19*60 || w.EndMin != 23*60 {
+		t.Fatalf("mon = %+v, want enabled 1140-1380", w)
+	}
+
+	empty, err := Windows(json.RawMessage(`{}`))
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("Windows({}) = %v, %v; want empty map, nil", empty, err)
+	}
+	if _, err := Windows(nil); err != nil {
+		t.Fatalf("Windows(nil) = %v, want nil error", err)
+	}
+	if _, err := Windows(json.RawMessage(`{"windows":{"mon":{"enabled":true,"start":"9:00","end":"10:00"}}}`)); err == nil {
+		t.Fatal("invalid doc must error")
+	}
+}
