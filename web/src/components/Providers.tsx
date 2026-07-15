@@ -55,7 +55,7 @@ function ToastProvider({ children }: { children: React.ReactNode }) {
       {message && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-zinc-950 px-4 py-2 text-sm text-zinc-50 shadow-lg dark:bg-zinc-50 dark:text-zinc-950"
+          className="fixed bottom-7 left-1/2 z-[60] -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-[22px] py-[11px] text-[13px] font-medium text-bg shadow-[0_6px_24px_rgba(0,0,0,.35)]"
         >
           {message}
         </div>

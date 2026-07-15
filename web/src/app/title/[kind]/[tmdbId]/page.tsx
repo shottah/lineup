@@ -1,4 +1,5 @@
 import { AuthGate } from "@/components/AuthGate";
+import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { TitleBody } from "./TitleBody";
 
@@ -13,6 +14,7 @@ export default async function TitlePage({
     <AuthGate>
       <Nav />
       <TitleBody kind={kind} tmdbId={tmdbId} />
+      <Footer />
     </AuthGate>
   );
 }

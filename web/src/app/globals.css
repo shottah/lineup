@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+[data-lt="dark"] {
+  --bg: #14161a;
+  --panel: #1e2127;
+  --panel2: #191c21;
+  --ink: #e9e9ec;
+  --mut: #8f929c;
+  --faint: #5b5e68;
+  --line: rgba(233, 233, 236, 0.09);
+  --acc: #9d97cf;
+  --accInk: #14161a;
+  --accSoft: rgba(157, 151, 207, 0.14);
+  --danger: #c96a6a;
+}
+
+[data-lt="light"] {
+  --bg: #f5f4f1;
+  --panel: #ffffff;
+  --panel2: #eceae6;
+  --ink: #22232a;
+  --mut: #5f6270;
+  --faint: #9da0ab;
+  --line: rgba(34, 35, 42, 0.12);
+  --acc: #6a63b0;
+  --accInk: #ffffff;
+  --accSoft: rgba(106, 99, 176, 0.11);
+  --danger: #c96a6a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-acc: var(--acc);
+  --color-acc-ink: var(--accInk);
+  --color-acc-soft: var(--accSoft);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-albert-sans), system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  transition: background 0.25s;
 }

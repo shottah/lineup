@@ -32,31 +32,35 @@ export function SearchBody() {
   });
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
-      <input
-        autoFocus
-        type="search"
-        aria-label="Search movies and series"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="Search movies and series…"
-        className="w-full rounded-lg border border-zinc-300 bg-transparent px-4 py-2 text-zinc-950 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-50"
-      />
-      {q === "" ? (
-        <p className="mt-8 text-sm text-zinc-500">Search for something to watch.</p>
-      ) : isPending ? (
-        <p className="mt-8 text-sm text-zinc-500">Searching…</p>
-      ) : error ? (
-        <p className="mt-8 text-sm text-red-600">Search is unavailable right now.</p>
-      ) : !data || data.results.length === 0 ? (
-        <p className="mt-8 text-sm text-zinc-500">Nothing found for “{q}”.</p>
-      ) : (
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {data.results.map((r) => (
-            <TitleCard key={`${r.kind}-${r.tmdb_id}`} title={r} />
-          ))}
-        </div>
-      )}
+    <main className="mx-auto max-w-[1280px] px-8">
+      <div className="flex flex-col gap-[22px] pt-[26px] pb-8">
+        <input
+          autoFocus
+          type="search"
+          aria-label="Search"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Search shows and movies…"
+          className="w-full max-w-[560px] rounded-xl border border-line bg-panel px-[18px] py-[13px] text-[15px] text-ink placeholder:text-faint"
+        />
+        {q === "" ? (
+          <p className="text-[13.5px] text-faint">
+            Type to search — results appear as you type.
+          </p>
+        ) : isPending ? (
+          <p className="text-[13.5px] text-faint">Searching…</p>
+        ) : error ? (
+          <p className="text-sm text-danger">Search is unavailable right now.</p>
+        ) : !data || data.results.length === 0 ? (
+          <p className="text-[13.5px] text-faint">No matches. Try a different spelling.</p>
+        ) : (
+          <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
+            {data.results.map((r) => (
+              <TitleCard key={`${r.kind}-${r.tmdb_id}`} title={r} />
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }
