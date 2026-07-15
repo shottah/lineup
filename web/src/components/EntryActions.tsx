@@ -74,6 +74,7 @@ export function EntryActions({
               key={s.value}
               type="button"
               disabled={busy}
+              aria-pressed={active}
               onClick={() => mutation.mutate({ status: active ? "none" : s.value })}
               className={`rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 ${
                 active
@@ -88,6 +89,7 @@ export function EntryActions({
         <button
           type="button"
           disabled={busy}
+          aria-pressed={favorite}
           aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
           onClick={() => mutation.mutate({ favorite: !favorite })}
           className={`ml-2 text-xl disabled:opacity-50 ${

@@ -26,10 +26,10 @@ export function StarRating({
           </span>
           <span
             aria-hidden
-            className="absolute inset-0 overflow-hidden text-center text-xl leading-6 text-amber-500"
+            className="absolute inset-y-0 left-0 overflow-hidden text-xl leading-6 text-amber-500"
             style={{ width: current >= star ? "100%" : current >= star - 0.5 ? "50%" : "0%" }}
           >
-            ★
+            <span className="block w-6 text-center">★</span>
           </span>
           <button
             type="button"

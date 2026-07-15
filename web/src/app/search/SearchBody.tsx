@@ -30,6 +30,8 @@ export function SearchBody() {
     <main className="mx-auto max-w-5xl p-6">
       <input
         autoFocus
+        type="search"
+        aria-label="Search movies and series"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         placeholder="Search movies and series…"
