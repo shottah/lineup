@@ -68,14 +68,17 @@ type guideResponse struct {
 	Providers map[int64]store.ProviderRow `json:"providers"`
 }
 
-// writeGuide responds with the guide plus its sidecars.
-func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, g *store.Guide) {
+// writeGuide responds with the guide plus its sidecars at the given status code.
+// It fetches the title/provider lookups first; on failure, writes a 500 error and returns.
+// Sets Content-Type and status code before encoding to ensure they ship with the response.
+func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, status int, g *store.Guide) {
 	titles, provs, err := d.Guides.GuideLookups(r.Context(), g.ID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(guideResponse{Guide: g, Titles: titles, Providers: provs})
 }
 
@@ -112,8 +115,7 @@ func handleCreateGuide(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		writeGuide(w, r, d, g)
+		writeGuide(w, r, d, http.StatusCreated, g)
 	}
 }
 
@@ -129,7 +131,7 @@ func handleCurrentGuide(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		writeGuide(w, r, d, g)
+		writeGuide(w, r, d, http.StatusOK, g)
 	}
 }
 
@@ -214,7 +216,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		writeGuide(w, r, d, refreshed)
+		writeGuide(w, r, d, http.StatusOK, refreshed)
 	}
 }
 

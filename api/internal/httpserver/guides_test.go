@@ -339,6 +339,10 @@ func TestCreateGuideHappyPath(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d, want 201 (body %s)", rec.Code, rec.Body.String())
 	}
+	// writeGuide must set Content-Type before WriteHeader to ensure header ships with 201 response.
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", rec.Header().Get("Content-Type"))
+	}
 	if fg.createArgs == nil {
 		t.Fatal("CreateGuideReplacingOverlaps was not called")
 	}
