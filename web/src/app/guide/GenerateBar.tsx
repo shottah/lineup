@@ -44,9 +44,6 @@ export function GenerateBar() {
         show("Couldn't save — try again.");
       }
     },
-    onSuccess: () => {
-      show("Generated your week!");
-    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["guide"] });
     },
