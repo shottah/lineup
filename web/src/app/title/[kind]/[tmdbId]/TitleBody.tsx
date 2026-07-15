@@ -22,7 +22,10 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   if (isPending) {
     return <p className="p-8 text-sm text-zinc-500">Loading…</p>;
   }
-  if (error || !data) {
+  // Error states only when there is nothing to show: a background refetch
+  // failure (e.g. after a mutation invalidates this query) keeps rendering
+  // the cached page rather than collapsing it mid-interaction.
+  if (!data) {
     const notFound = error instanceof ApiError && error.status === 404;
     return (
       <p className="p-8 text-sm text-zinc-500">
