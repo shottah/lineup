@@ -64,10 +64,11 @@ function SettingsForm({ user }: { user: User }) {
   const { show } = useToast();
 
   const [form, setForm] = useState<FormState>(() => initialForm(user));
-  // Snapshot of what the server currently has. Seeded from the initial
-  // load; updated to the saved payload on every successful PATCH so the
-  // auto-save effect below only fires on real, unsaved changes.
-  const lastSaved = useRef<FormState>(form);
+  // Snapshot of the last attempted payload. Seeded from the initial load;
+  // updated on both success and failure so a failed save holds until the user
+  // edits again (matching explicit-save UX: "Couldn't save — try again" means
+  // the user must change something to retry, not autosave retry forever).
+  const lastAttempted = useRef<FormState>(form);
 
   const regions = REGIONS.includes(form.region) ? REGIONS : [form.region, ...REGIONS];
 
@@ -94,22 +95,25 @@ function SettingsForm({ user }: { user: User }) {
         body: JSON.stringify(payload),
       }),
     onSuccess: (_data, payload) => {
-      lastSaved.current = { region: payload.region, prefs: payload.schedule_prefs };
+      lastAttempted.current = { region: payload.region, prefs: payload.schedule_prefs };
       show("Settings saved");
       queryClient.invalidateQueries({ queryKey: ["me"] });
     },
-    onError: () => show("Couldn't save — try again."),
+    onError: (_err, payload) => {
+      lastAttempted.current = { region: payload.region, prefs: payload.schedule_prefs };
+      show("Couldn't save — try again.");
+    },
   });
 
   // Auto-save (approved delta, replaces the Save button): whenever the
-  // form differs from the last-saved snapshot and every row validates,
+  // form differs from the last-attempted snapshot and every row validates,
   // debounce 600ms then PATCH the full document. Skips while a save is
   // already in flight; once that save settles (isPending flips back to
   // false) the effect re-runs and re-queues if the form moved on since.
   useEffect(() => {
     if (mutation.isPending) return;
     if (invalidDays.length > 0) return;
-    if (JSON.stringify(form) === JSON.stringify(lastSaved.current)) return;
+    if (JSON.stringify(form) === JSON.stringify(lastAttempted.current)) return;
 
     const timer = setTimeout(() => {
       mutation.mutate({ region: form.region, schedule_prefs: form.prefs });
