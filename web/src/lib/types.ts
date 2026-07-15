@@ -67,6 +67,7 @@ export type EntryStatus = "none" | "watchlist" | "rotation" | "watched";
 
 export type Entry = {
   title_id: number;
+  tmdb_id: number;
   kind: "movie" | "series";
   name: string;
   poster_path: string;

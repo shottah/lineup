@@ -33,7 +33,9 @@ func (f *fakeEntries) UpsertEntry(_ context.Context, _ int64, titleID int64, u s
 	}
 	e, ok := f.entries[titleID]
 	if !ok {
-		e = &store.Entry{TitleID: titleID, Kind: "series", Name: f.titles[titleID], Status: "none",
+		// Fake tmdb ids are derived deterministically so handler tests can
+		// assert the field flows through (real ids come from the join).
+		e = &store.Entry{TitleID: titleID, TMDBID: titleID + 100000, Kind: "series", Name: f.titles[titleID], Status: "none",
 			Pointer: store.Pointer{Season: 1, Episode: 1}, AddedAt: time.Now()}
 		f.entries[titleID] = e
 	}
