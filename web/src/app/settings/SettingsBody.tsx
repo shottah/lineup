@@ -54,7 +54,8 @@ function SettingsForm({ user }: { user: User }) {
   // not. Zero-padded HH:MM compares correctly as strings.
   const invalidDays = DAYS.filter((d) => {
     const w = form.prefs.windows[d.key];
-    return w.start >= w.end;
+    // A cleared native time input reports "" — invalid, like start >= end.
+    return !w.start || !w.end || w.start >= w.end;
   }).map((d) => d.key);
 
   const mutation = useMutation({
