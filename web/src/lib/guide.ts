@@ -9,6 +9,14 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const UNKNOWN_TITLE: GuideTitleLookup = { name: "Unknown title", kind: "movie", tmdb_id: 0 };
 
+// "Month D" (e.g. "Jul 20") for a YYYY-MM-DD date — the header's "Week of
+// {Month D}" (#18 Task 3) reuses the same month names and UTC parse as
+// toCalendarColumns' day labels rather than duplicating them.
+export function monthDay(date: string): string {
+  const d = utc(date);
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
 export function fmtTime(startMin: number): string {
   const h24 = Math.floor(startMin / 60) % 24;
   const m = startMin % 60;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GuideResponse } from "./types";
-import { fmtTime, toBoardRows, toCalendarColumns } from "./guide";
+import { fmtTime, monthDay, toBoardRows, toCalendarColumns } from "./guide";
 
 // Two-day fixture: day 1 has a movie plan (20:00 on provider 8), a
 // watched+pinned series plan (21:30 on provider 9), an alternate sharing
@@ -37,6 +37,13 @@ describe("fmtTime", () => {
     expect(fmtTime(720)).toBe("12:00 pm");
     expect(fmtTime(1230)).toBe("8:30 pm");
     expect(fmtTime(1439)).toBe("11:59 pm");
+  });
+});
+
+describe("monthDay", () => {
+  it("formats YYYY-MM-DD as Month D", () => {
+    expect(monthDay("2026-07-20")).toBe("Jul 20");
+    expect(monthDay("2026-01-01")).toBe("Jan 1");
   });
 });
 
