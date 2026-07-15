@@ -1,57 +1,106 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/Providers";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { signOutUser } from "@/lib/firebase";
+
+const NAV_ITEMS = [
+  { href: "/guide", label: "Guide" },
+  { href: "/search", label: "Search" },
+  { href: "/profile", label: "Profile" },
+  { href: "/settings", label: "Settings" },
+] as const;
 
 export function Nav() {
   const { user } = useAuth();
+  const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
+
+  const initial = user?.email ? user.email[0].toUpperCase() : "?";
 
   return (
-    <nav className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-      <div className="flex items-center gap-4">
-        <Link href="/guide" className="font-semibold text-zinc-950 dark:text-zinc-50">
+    <header className="relative flex items-center justify-between gap-4 border-b border-line px-8 py-[18px]">
+      <div className="flex items-center gap-7">
+        <Link href="/guide" className="text-[19px] font-semibold tracking-[-0.01em] text-ink">
           Lineup
         </Link>
-        <Link
-          href="/search"
-          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
-        >
-          Search
-        </Link>
-        <Link
-          href="/profile"
-          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
-        >
-          Profile
-        </Link>
-        <Link
-          href="/settings"
-          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
-        >
-          Settings
-        </Link>
+        <nav className="flex gap-1">
+          {NAV_ITEMS.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`rounded-full px-[15px] py-[7px] text-[13px] font-medium ${
+                  active ? "bg-acc-soft text-acc" : "text-mut"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
-      <div className="flex items-center gap-4 text-sm">
-        <span className="text-zinc-500">{user?.email}</span>
-        <button
-          onClick={async () => {
-            await signOutUser();
-            // Drop all cached query data so the next account never sees the
-            // previous account's profile served from cache.
-            queryClient.clear();
-            router.replace("/login");
-          }}
-          className="text-zinc-950 underline underline-offset-4 dark:text-zinc-50"
-        >
-          Sign out
-        </button>
+      <div className="flex items-center gap-2.5">
+        <ThemeToggle />
+        <div ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label="Account"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-acc-soft text-[13px] font-semibold text-acc"
+          >
+            {initial}
+          </button>
+          {menuOpen && (
+            <div className="absolute right-8 top-14 z-50 min-w-[200px] rounded-xl border border-line bg-panel p-2 shadow-lg">
+              <p className="truncate px-3 py-2 text-xs text-mut">{user?.email}</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setMenuOpen(false);
+                  await signOutUser();
+                  // Drop all cached query data so the next account never sees the
+                  // previous account's profile served from cache.
+                  queryClient.clear();
+                  router.replace("/login");
+                }}
+                className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-panel2"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

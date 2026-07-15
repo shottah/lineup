@@ -20,10 +20,14 @@ export default function LoginPage() {
   }, [loading, user, router]);
 
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <div className="w-full max-w-sm rounded-xl border border-zinc-200 p-8 text-center dark:border-zinc-800">
-        <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Lineup</h1>
-        <p className="mt-2 text-sm text-zinc-500">Your week of TV, planned like a lineup</p>
+    <main className="flex min-h-[80vh] items-center justify-center py-10">
+      <div className="w-[360px] rounded-[20px] border border-line bg-panel px-9 py-10 text-center">
+        <div className="relative mx-auto mb-2.5 h-8 w-11 rounded-lg border-2 border-acc">
+          <span className="absolute -top-3 left-[9px] h-[11px] w-0.5 -rotate-[28deg] bg-acc" />
+          <span className="absolute -top-3 right-[9px] h-[11px] w-0.5 rotate-[28deg] bg-acc" />
+        </div>
+        <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-ink">Lineup</h1>
+        <p className="mt-2 text-sm text-mut">Your week of TV, planned like a lineup.</p>
         <button
           disabled={busy}
           onClick={async () => {
@@ -37,16 +41,22 @@ export default function LoginPage() {
               setBusy(false);
             }
           }}
-          className="mt-6 w-full rounded-lg bg-zinc-950 px-4 py-2 text-zinc-50 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950"
+          className="mt-[22px] flex w-full items-center justify-center gap-2.5 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-bg disabled:opacity-50"
         >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-bg text-xs font-bold text-ink">
+            G
+          </span>
           Continue with Google
         </button>
         {config.appleAuth && (
-          <button className="mt-3 w-full rounded-lg border border-zinc-300 px-4 py-2 text-zinc-950 dark:border-zinc-700 dark:text-zinc-50">
+          <button className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-full border border-line px-5 py-3 text-sm font-semibold text-ink">
             Continue with Apple
           </button>
         )}
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+        <p className="mt-3.5 text-[11px] text-faint">
+          One evening at a time. No autoplay, no feeds.
+        </p>
       </div>
     </main>
   );
