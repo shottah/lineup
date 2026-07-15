@@ -67,6 +67,7 @@ export type EntryStatus = "none" | "watchlist" | "rotation" | "watched";
 
 export type Entry = {
   title_id: number;
+  tmdb_id: number;
   kind: "movie" | "series";
   name: string;
   poster_path: string;
@@ -85,4 +86,12 @@ export type TitleFull = {
   seasons: SeasonRow[];
   providers: ProviderRow[];
   entry: Entry | null;
+};
+
+// --- Profile shelves (#17). Mirrors /v1/me/shelves/{shelf}.
+
+export type ShelfName = "watchlist" | "rotation" | "watched" | "favorites" | "ratings";
+
+export type ShelfResponse = {
+  entries: Entry[];
 };

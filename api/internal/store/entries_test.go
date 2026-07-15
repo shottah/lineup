@@ -50,6 +50,11 @@ func TestUpsertEntryLifecycle(t *testing.T) {
 		e.Pointer.Season != 1 || e.Pointer.Episode != 1 || e.WatchedAt != nil || e.Name != "Entry Lifecycle Show" {
 		t.Fatalf("insert entry = %+v", e)
 	}
+	// Shelf cards link to /title/{kind}/{tmdbId}; the payload must carry
+	// the TMDB id (#17).
+	if e.TMDBID == 0 {
+		t.Fatalf("entry TMDBID = 0, want the seeded title's tmdb_id")
+	}
 
 	// Partial update: status only — rating survives.
 	e, err = s.UpsertEntry(ctx, uid, tid, EntryUpdate{Status: strp("watchlist")})

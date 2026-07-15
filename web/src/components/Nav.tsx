@@ -24,6 +24,18 @@ export function Nav() {
         >
           Search
         </Link>
+        <Link
+          href="/profile"
+          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
+        >
+          Profile
+        </Link>
+        <Link
+          href="/settings"
+          className="text-sm text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
+        >
+          Settings
+        </Link>
       </div>
       <div className="flex items-center gap-4 text-sm">
         <span className="text-zinc-500">{user?.email}</span>

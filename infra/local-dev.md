@@ -25,6 +25,10 @@ touch real cloud resources with them. Do NOT use the real project ID here.
 `FIREBASE_AUTH_EMULATOR_HOST` makes firebase-admin-go verify tokens against
 the emulator. Omit it (and use the real project ID) to verify real tokens.
 
+Unlike the Next dev server, `go run` does NOT hot-reload: after pulling or
+switching branches with `api/` changes, kill and restart this process, or
+the web app will talk to a stale API (missing fields, absent routes).
+
 ## 4. Web (port 3001 — 3000 is often taken)
 
     cd web && pnpm run dev --port 3001

@@ -33,7 +33,9 @@ func (f *fakeEntries) UpsertEntry(_ context.Context, _ int64, titleID int64, u s
 	}
 	e, ok := f.entries[titleID]
 	if !ok {
-		e = &store.Entry{TitleID: titleID, Kind: "series", Name: f.titles[titleID], Status: "none",
+		// Fake tmdb ids are derived deterministically so handler tests can
+		// assert the field flows through (real ids come from the join).
+		e = &store.Entry{TitleID: titleID, TMDBID: titleID + 100000, Kind: "series", Name: f.titles[titleID], Status: "none",
 			Pointer: store.Pointer{Season: 1, Episode: 1}, AddedAt: time.Now()}
 		f.entries[titleID] = e
 	}
@@ -230,6 +232,9 @@ func TestGetShelf(t *testing.T) {
 			}
 			if fmt.Sprint(ids) != fmt.Sprint(tc.want) {
 				t.Fatalf("shelf %s ids = %v, want %v", tc.shelf, ids, tc.want)
+			}
+			if len(body.Entries) > 0 && body.Entries[0].TMDBID != body.Entries[0].TitleID+100000 {
+				t.Fatalf("entry tmdb_id = %d, want title_id+100000 (fake derivation)", body.Entries[0].TMDBID)
 			}
 		})
 	}

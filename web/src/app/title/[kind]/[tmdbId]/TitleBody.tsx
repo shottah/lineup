@@ -50,10 +50,14 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
         <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">{title.name}</h1>
         <p className="mt-1 text-sm text-zinc-500">
           {title.kind === "movie"
-            ? `Movie · ${title.runtime_minutes} min`
-            : `Series · ${seasons.length} season${seasons.length === 1 ? "" : "s"}${
-                title.airing ? " · airing" : ""
-              }`}
+            ? title.runtime_minutes > 0
+              ? `Movie · ${title.runtime_minutes} min`
+              : "Movie"
+            : `Series${
+                seasons.length > 0
+                  ? ` · ${seasons.length} season${seasons.length === 1 ? "" : "s"}`
+                  : ""
+              }${title.airing ? " · airing" : ""}`}
         </p>
         {title.overview && (
           <p className="mt-4 text-sm leading-6 text-zinc-700 dark:text-zinc-300">{title.overview}</p>

@@ -24,6 +24,7 @@ type Pointer struct {
 // shelf views render.
 type Entry struct {
 	TitleID        int64      `json:"title_id"`
+	TMDBID         int64      `json:"tmdb_id"`
 	Kind           string     `json:"kind"`
 	Name           string     `json:"name"`
 	PosterPath     string     `json:"poster_path"`
@@ -47,12 +48,12 @@ type EntryUpdate struct {
 	Pointer     *Pointer
 }
 
-const entryColumns = `t.id, t.kind, t.name, t.poster_path, t.runtime_minutes, t.airing,
+const entryColumns = `t.id, t.tmdb_id, t.kind, t.name, t.poster_path, t.runtime_minutes, t.airing,
        %[1]s.status, %[1]s.rating, %[1]s.favorite, %[1]s.pointer_season, %[1]s.pointer_episode, %[1]s.added_at, %[1]s.watched_at`
 
 func scanEntry(row pgx.Row) (*Entry, error) {
 	e := &Entry{}
-	err := row.Scan(&e.TitleID, &e.Kind, &e.Name, &e.PosterPath, &e.RuntimeMinutes, &e.Airing,
+	err := row.Scan(&e.TitleID, &e.TMDBID, &e.Kind, &e.Name, &e.PosterPath, &e.RuntimeMinutes, &e.Airing,
 		&e.Status, &e.Rating, &e.Favorite, &e.Pointer.Season, &e.Pointer.Episode, &e.AddedAt, &e.WatchedAt)
 	if err != nil {
 		return nil, err
