@@ -468,6 +468,60 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 	return it, nil
 }
 
+// TitleLookup is the guide sidecar's per-title rendering data (#18).
+type TitleLookup struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	TMDBID int64  `json:"tmdb_id"`
+}
+
+// GuideLookups returns rendering dictionaries for a guide's items: every
+// distinct title and provider referenced, keyed by id. Ownership is the
+// caller's concern (handlers resolve the guide by user first).
+func (s *Store) GuideLookups(ctx context.Context, guideID int64) (map[int64]TitleLookup, map[int64]ProviderRow, error) {
+	titles := map[int64]TitleLookup{}
+	rows, err := s.Pool.Query(ctx, `
+SELECT DISTINCT t.id, t.name, t.kind, t.tmdb_id
+FROM guide_items gi JOIN titles t ON t.id = gi.title_id
+WHERE gi.guide_id = $1`, guideID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store: guide lookups: titles: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var tl TitleLookup
+		if err := rows.Scan(&id, &tl.Name, &tl.Kind, &tl.TMDBID); err != nil {
+			return nil, nil, fmt.Errorf("store: guide lookups: titles scan: %w", err)
+		}
+		titles[id] = tl
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("store: guide lookups: titles rows: %w", err)
+	}
+
+	provs := map[int64]ProviderRow{}
+	prows, err := s.Pool.Query(ctx, `
+SELECT DISTINCT p.id, p.name, p.logo_path
+FROM guide_items gi JOIN providers p ON p.id = gi.provider_id
+WHERE gi.guide_id = $1`, guideID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store: guide lookups: providers: %w", err)
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var p ProviderRow
+		if err := prows.Scan(&p.ID, &p.Name, &p.LogoPath); err != nil {
+			return nil, nil, fmt.Errorf("store: guide lookups: providers scan: %w", err)
+		}
+		provs[p.ID] = p
+	}
+	if err := prows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("store: guide lookups: providers rows: %w", err)
+	}
+	return titles, provs, nil
+}
+
 // SwapTitle validates a swap target (rotation or watchlist) and returns
 // what the handler needs to rewrite the item, including the target's
 // region-filtered providers so the caller can recompute provider_id

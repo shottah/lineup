@@ -28,6 +28,7 @@ type GuideStore interface {
 	DeleteGuideItem(ctx context.Context, userID, guideID, itemID int64) error
 	MarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
 	SwapTitle(ctx context.Context, userID, titleID int64, region string) (*store.SwapInfo, error)
+	GuideLookups(ctx context.Context, guideID int64) (map[int64]store.TitleLookup, map[int64]store.ProviderRow, error)
 }
 
 const dateFmt = "2006-01-02"
@@ -57,6 +58,25 @@ func (d Deps) buildInput(ctx context.Context, u *store.User, start time.Time, da
 		return guide.Input{}, err
 	}
 	return guide.Input{Seed: seed, Days: guideDays(start, days, windows), Titles: titles, Keep: keep}, nil
+}
+
+// guideResponse decorates a guide with rendering dictionaries so the web
+// can resolve item ids without extra round trips (#18).
+type guideResponse struct {
+	*store.Guide
+	Titles    map[int64]store.TitleLookup `json:"titles"`
+	Providers map[int64]store.ProviderRow `json:"providers"`
+}
+
+// writeGuide responds with the guide plus its sidecars.
+func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, g *store.Guide) {
+	titles, provs, err := d.Guides.GuideLookups(r.Context(), g.ID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(guideResponse{Guide: g, Titles: titles, Providers: provs})
 }
 
 func handleCreateGuide(d Deps) http.HandlerFunc {
@@ -92,9 +112,8 @@ func handleCreateGuide(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(g)
+		writeGuide(w, r, d, g)
 	}
 }
 
@@ -110,8 +129,7 @@ func handleCurrentGuide(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(g)
+		writeGuide(w, r, d, g)
 	}
 }
 
@@ -196,8 +214,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(refreshed)
+		writeGuide(w, r, d, refreshed)
 	}
 }
 
