@@ -91,7 +91,12 @@ func TestAirdatePin(t *testing.T) {
 	out := Generate(in)
 
 	var pinDates []string
+	var e1Placed, e1Pinned bool
 	for _, it := range plans(out) {
+		if it.TitleID == 1 && it.Season == 1 && it.Episode == 1 {
+			e1Placed = true
+			e1Pinned = it.Pinned
+		}
 		if it.TitleID == 1 && it.Season == 1 && it.Episode == 2 {
 			pinDates = append(pinDates, it.Date)
 			if !it.Pinned {
@@ -101,6 +106,12 @@ func TestAirdatePin(t *testing.T) {
 		if it.Season == 1 && it.Episode == 3 {
 			t.Fatalf("unaired-in-range episode scheduled: %+v", it)
 		}
+	}
+	if !e1Placed {
+		t.Fatalf("before-range episode S1E1 not placed")
+	}
+	if e1Pinned {
+		t.Fatalf("before-range episode S1E1 should not be Pinned but was")
 	}
 	if len(pinDates) != 1 || pinDates[0] != "2026-01-07" {
 		t.Fatalf("S1E2 pin dates = %v, want exactly [2026-01-07]", pinDates)
@@ -434,5 +445,55 @@ func TestVarietyPenaltyConsecutiveNights(t *testing.T) {
 	}
 	if violations > 0 {
 		t.Fatalf("variety miss in %d/50 seeds: series 1 scheduled Fri(pin)+Sat though correct -3 makes series 2 win outright.\nexample plan: %+v", violations, example)
+	}
+}
+
+// ---- Task 4 tests (airing back catalog is schedulable) ----
+
+// TestAiringBackCatalogSchedulable is the regression for the airing-rule
+// root cause: title_airings (the source of AirDates) only ever stores
+// FUTURE episodes, so an airing show's already-aired back catalog has no
+// air-map entry. Unknown air date must mean "already aired" (schedulable
+// anywhere), not "not yet aired" (blocked) -- otherwise an airing show with
+// any future-dated episode goes almost entirely unschedulable. A known
+// future date must still wait for, and pin to, its air night.
+func TestAiringBackCatalogSchedulable(t *testing.T) {
+	tt := series(1, 60, 1)
+	tt.Airing = true
+	tt.AirDates = []AiredEpisode{
+		{Season: 1, Episode: 4, Date: "2026-01-09"}, // known future date: must wait for/pin to it
+	}
+	in := Input{Seed: 3, Days: week(evening(), evening()), Titles: []Title{tt}}
+	out := Generate(in)
+
+	placed := map[epKey]Item{}
+	for _, it := range plans(out) {
+		if it.TitleID == 1 {
+			placed[epKey{it.Season, it.Episode}] = it
+		}
+	}
+
+	// Back catalog: S1E1-E3 sit before the pointer's first candidate and
+	// have no air-map entry (already aired, date unknown). The fill pass
+	// must place them, not skip the show entirely.
+	for _, k := range []epKey{{1, 1}, {1, 2}, {1, 3}} {
+		it, ok := placed[k]
+		if !ok {
+			t.Fatalf("back catalog episode %v not placed at all: %v", k, placed)
+		}
+		if it.Pinned {
+			t.Fatalf("back catalog episode %v unexpectedly pinned: %+v", k, it)
+		}
+	}
+
+	// S1E4 has a known future air date: must appear exactly once, pinned,
+	// on that date -- never placed early by fill (existing pin-behavior
+	// contract; must not regress).
+	e4, ok := placed[epKey{1, 4}]
+	if !ok {
+		t.Fatalf("S1E4 (known future date) not placed: %v", placed)
+	}
+	if !e4.Pinned || e4.Date != "2026-01-09" {
+		t.Fatalf("S1E4 = %+v, want Pinned on 2026-01-09", e4)
 	}
 }

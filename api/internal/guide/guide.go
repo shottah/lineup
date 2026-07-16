@@ -332,14 +332,24 @@ func (e *engine) nextEpisode(t *Title) (epKey, bool) {
 	}
 }
 
-// schedulable applies the airing rule: airing titles only schedule
-// episodes whose air date is known and on/before the target date.
+// schedulable applies the airing rule: airing titles schedule freely
+// except episodes with a known future air date, which wait for (and
+// air-pin to, see passAirPins) their air night. title_airings only ever
+// INSERTS future episodes — rows persist after airing and hydration doesn't
+// date-filter — so a missing entry means the episode was never known-future:
+// back catalog.
+//
+// Trade-off: an episode that's within the season's known episode count but
+// beyond TVMaze's published schedule (no air date yet, but not actually
+// aired either) could slip into the guide early under this rule. Accepted:
+// airings refresh daily, so it self-corrects once TVMaze publishes the
+// date.
 func (e *engine) schedulable(t *Title, k epKey, date string) bool {
 	if !t.Airing {
 		return true
 	}
 	d, ok := e.air[t.ID][k]
-	return ok && d <= date
+	return !ok || d <= date
 }
 
 // passFill greedily fills remaining capacity day by day using the fixed
