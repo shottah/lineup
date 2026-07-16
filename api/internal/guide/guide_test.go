@@ -91,7 +91,13 @@ func TestAirdatePin(t *testing.T) {
 	out := Generate(in)
 
 	var pinDates []string
+	var e1Placed bool
+	var e1Pinned bool
 	for _, it := range plans(out) {
+		if it.TitleID == 1 && it.Season == 1 && it.Episode == 1 {
+			e1Placed = true
+			e1Pinned = it.Pinned
+		}
 		if it.TitleID == 1 && it.Season == 1 && it.Episode == 2 {
 			pinDates = append(pinDates, it.Date)
 			if !it.Pinned {
@@ -101,6 +107,12 @@ func TestAirdatePin(t *testing.T) {
 		if it.Season == 1 && it.Episode == 3 {
 			t.Fatalf("unaired-in-range episode scheduled: %+v", it)
 		}
+	}
+	if !e1Placed {
+		t.Fatalf("before-range episode S1E1 not placed")
+	}
+	if e1Pinned {
+		t.Fatalf("before-range episode S1E1 should not be Pinned but was")
 	}
 	if len(pinDates) != 1 || pinDates[0] != "2026-01-07" {
 		t.Fatalf("S1E2 pin dates = %v, want exactly [2026-01-07]", pinDates)
