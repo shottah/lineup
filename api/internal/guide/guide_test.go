@@ -91,8 +91,7 @@ func TestAirdatePin(t *testing.T) {
 	out := Generate(in)
 
 	var pinDates []string
-	var e1Placed bool
-	var e1Pinned bool
+	var e1Placed, e1Pinned bool
 	for _, it := range plans(out) {
 		if it.TitleID == 1 && it.Season == 1 && it.Episode == 1 {
 			e1Placed = true
