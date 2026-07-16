@@ -48,37 +48,40 @@ export function WatchlistQuickActions({ entry }: { entry: Entry }) {
   const busy = mutation.isPending;
 
   return (
-    <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex justify-center gap-1.5 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-      <button
-        type="button"
-        disabled={busy}
-        aria-pressed={entry.favorite}
-        aria-label={entry.favorite ? "Remove from favorites" : "Add to favorites"}
-        onClick={() => mutation.mutate({ favorite: !entry.favorite })}
-        className={`rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-sm backdrop-blur disabled:opacity-50 ${
-          entry.favorite ? "text-acc" : "text-faint"
-        }`}
-      >
-        ♥
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        aria-label="Add to rotation"
-        onClick={() => mutation.mutate({ status: "rotation" })}
-        className="rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-xs font-medium text-ink backdrop-blur disabled:opacity-50"
-      >
-        ＋ Rotation
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        aria-label="Remove from watchlist"
-        onClick={() => mutation.mutate({ status: "none" })}
-        className="rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-xs font-medium text-mut backdrop-blur disabled:opacity-50"
-      >
-        ✕
-      </button>
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 aspect-[2/3] overflow-hidden rounded-xl opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 via-black/35 to-transparent" />
+      <div className="absolute inset-x-2 bottom-2 flex justify-center gap-1.5">
+        <button
+          type="button"
+          disabled={busy}
+          aria-pressed={entry.favorite}
+          aria-label={entry.favorite ? "Remove from favorites" : "Add to favorites"}
+          onClick={() => mutation.mutate({ favorite: !entry.favorite })}
+          className={`pointer-events-none rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-sm backdrop-blur disabled:opacity-50 group-hover:pointer-events-auto group-focus-within:pointer-events-auto ${
+            entry.favorite ? "text-acc" : "text-faint"
+          }`}
+        >
+          ♥
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-label="Add to rotation"
+          onClick={() => mutation.mutate({ status: "rotation" })}
+          className="pointer-events-none rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-xs font-medium text-ink backdrop-blur disabled:opacity-50 group-hover:pointer-events-auto group-focus-within:pointer-events-auto"
+        >
+          ＋ Rotation
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-label="Remove from watchlist"
+          onClick={() => mutation.mutate({ status: "none" })}
+          className="pointer-events-none rounded-full border border-line bg-panel/90 px-2.5 py-1.5 text-xs font-medium text-mut backdrop-blur disabled:opacity-50 group-hover:pointer-events-auto group-focus-within:pointer-events-auto"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
