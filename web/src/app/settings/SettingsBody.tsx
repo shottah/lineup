@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useToast } from "@/components/Providers";
 import { api } from "@/lib/api";
+import { fmtTime } from "@/lib/guide";
 import type { DayWindow, SchedulePrefs, User } from "@/lib/types";
+import { parseHHMM, toHHMM, WindowSlider } from "./WindowSlider";
 
 const REGION_NAMES: Record<string, string> = {
   US: "United States",
@@ -80,11 +82,27 @@ function SettingsForm({ user }: { user: User }) {
       },
     }));
 
+  // Apply-to-all: copies the row's start/end (not its enabled flag) to
+  // every day in one state update, so it debounces into a single save
+  // like any other edit rather than fanning out seven.
+  const applyToAllDays = (day: string) => {
+    const { start, end } = form.prefs.windows[day];
+    setForm((f) => ({
+      ...f,
+      prefs: {
+        windows: Object.fromEntries(
+          DAYS.map((d) => [d.key, { ...f.prefs.windows[d.key], start, end }]),
+        ),
+      },
+    }));
+  };
+
   // Server rule (prefs.Validate): start < end on EVERY row, enabled or
   // not. Zero-padded HH:MM compares correctly as strings.
   const invalidDays = DAYS.filter((d) => {
     const w = form.prefs.windows[d.key];
-    // A cleared native time input reports "" — invalid, like start >= end.
+    // The slider always emits valid HH:MM; empty strings only ever come
+    // from legacy/malformed stored data, treated the same as start >= end.
     return !w.start || !w.end || w.start >= w.end;
   }).map((d) => d.key);
 
@@ -212,29 +230,35 @@ function SettingsForm({ user }: { user: User }) {
                     />
                   </button>
                   <div
-                    className={`w-[86px] text-[13px] font-semibold ${
+                    className={`w-[34px] text-[13px] font-semibold ${
                       w.enabled ? "text-ink" : "text-faint"
                     }`}
                   >
                     {d.label}
                   </div>
-                  <input
-                    type="time"
-                    value={w.start}
-                    disabled={!w.enabled}
-                    aria-label={`${d.label} start`}
-                    onChange={(e) => setWindow(d.key, { start: e.target.value })}
-                    className="rounded-lg border border-line bg-panel2 px-2 py-[5px] text-[12.5px] font-medium text-ink disabled:opacity-50"
-                  />
-                  <span className="text-[12px] text-faint">to</span>
-                  <input
-                    type="time"
-                    value={w.end}
-                    disabled={!w.enabled}
-                    aria-label={`${d.label} end`}
-                    onChange={(e) => setWindow(d.key, { end: e.target.value })}
-                    className="rounded-lg border border-line bg-panel2 px-2 py-[5px] text-[12.5px] font-medium text-ink disabled:opacity-50"
-                  />
+                  <div className="flex-1">
+                    <WindowSlider
+                      startMin={parseHHMM(w.start)}
+                      endMin={parseHHMM(w.end)}
+                      disabled={!w.enabled}
+                      dayLabel={d.label}
+                      onChange={(startMin, endMin) =>
+                        setWindow(d.key, { start: toHHMM(startMin), end: toHHMM(endMin) })
+                      }
+                    />
+                    <div className="mt-1 flex items-center gap-3">
+                      <span className={`text-[13px] ${w.enabled ? "text-mut" : "text-faint"}`}>
+                        {fmtTime(parseHHMM(w.start))} – {fmtTime(parseHHMM(w.end))}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => applyToAllDays(d.key)}
+                        className="text-[12px] font-medium text-acc"
+                      >
+                        Apply to all days
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 {invalid && (
                   <p className="mt-1.5 ml-[52px] text-[11.5px] font-medium text-danger">
