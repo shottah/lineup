@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
+import { fmtTime } from "@/lib/guide";
 
 // Track bounds (minutes from midnight): 16:00 -> 24:00. 1440 is the
 // "midnight" terminal stop — the API rejects "24:00" and requires
@@ -44,6 +45,20 @@ function percentOf(min: number): number {
   return ((min - TRACK_MIN) / (TRACK_MAX - TRACK_MIN)) * 100;
 }
 
+export function clampPair(
+  start: number,
+  end: number,
+  changed: "start" | "end"
+): [number, number] {
+  if (changed === "start") {
+    const clamped = Math.min(Math.max(start, TRACK_MIN), TRACK_MAX - MIN_GAP);
+    return [clamped, Math.max(end, clamped + MIN_GAP)];
+  } else {
+    const clamped = Math.max(Math.min(end, TRACK_MAX), TRACK_MIN + MIN_GAP);
+    return [Math.min(start, clamped - MIN_GAP), clamped];
+  }
+}
+
 const THUMB =
   "[&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none " +
   "[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full " +
@@ -70,13 +85,13 @@ export function WindowSlider({ startMin, endMin, disabled, onChange, dayLabel }:
   const displayEnd = toDisplay(endMin);
 
   const handleStart = (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = Number(e.target.value);
-    onChange(Math.min(raw, displayEnd - MIN_GAP), displayEnd);
+    const [start, end] = clampPair(Number(e.target.value), displayEnd, "start");
+    onChange(start, end);
   };
 
   const handleEnd = (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = Number(e.target.value);
-    onChange(displayStart, Math.max(raw, displayStart + MIN_GAP));
+    const [start, end] = clampPair(displayStart, Number(e.target.value), "end");
+    onChange(start, end);
   };
 
   return (
@@ -95,6 +110,7 @@ export function WindowSlider({ startMin, endMin, disabled, onChange, dayLabel }:
           value={displayStart}
           disabled={disabled}
           aria-label={`${dayLabel} start`}
+          aria-valuetext={fmtTime(displayStart)}
           onChange={handleStart}
           className={RANGE_INPUT_CLASS}
         />
@@ -106,6 +122,7 @@ export function WindowSlider({ startMin, endMin, disabled, onChange, dayLabel }:
           value={displayEnd}
           disabled={disabled}
           aria-label={`${dayLabel} end`}
+          aria-valuetext={fmtTime(displayEnd)}
           onChange={handleEnd}
           className={RANGE_INPUT_CLASS}
         />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseHHMM, toHHMM } from "./WindowSlider";
+import { parseHHMM, toHHMM, clampPair } from "./WindowSlider";
 
 describe("parseHHMM", () => {
   it("parses ordinary HH:MM into minutes", () => {
@@ -42,5 +42,28 @@ describe("sentinel round-trip", () => {
     for (let m = 960; m < 1440; m += 30) {
       expect(parseHHMM(toHHMM(m))).toBe(m);
     }
+  });
+});
+
+describe("clampPair", () => {
+  it("clamps legacy start above track max into bounds, preserving gap", () => {
+    const [start, end] = clampPair(1425, 1440, "start");
+    expect(start).toBe(1410); // TRACK_MAX - MIN_GAP = 1440 - 30 = 1410
+    expect(end).toBe(1440); // end unchanged (already >= start + MIN_GAP)
+    expect(end - start).toBeGreaterThanOrEqual(30); // gap preserved
+  });
+
+  it("clamps legacy end below track min into bounds, preserving gap", () => {
+    const [start, end] = clampPair(960, 960, "end");
+    expect(start).toBe(960); // start unchanged (already <= end - MIN_GAP)
+    expect(end).toBe(990); // TRACK_MIN + MIN_GAP = 960 + 30 = 990
+    expect(end - start).toBeGreaterThanOrEqual(30); // gap preserved
+  });
+
+  it("clamps normal interaction within track bounds", () => {
+    const [start, end] = clampPair(1050, 1080, "start");
+    expect(start).toBeGreaterThanOrEqual(960); // TRACK_MIN
+    expect(end).toBeLessThanOrEqual(1440); // TRACK_MAX
+    expect(end - start).toBeGreaterThanOrEqual(30); // MIN_GAP
   });
 });
