@@ -196,69 +196,100 @@ async function sampleLogoPlate(url: string): Promise<"plate-light" | "plate-dark
   });
 }
 
+// --- shared cache + in-flight + fallback orchestration --------------------
+//
+// posterHue (§2.2) and logoPlate (§5.1) both resolve a value for a key,
+// at most once per key for the life of the session: a cache hit returns
+// synchronously, a concurrent call for the same key joins the one
+// in-flight extraction rather than starting a second, a key with no
+// sampleable source resolves straight to the fallback, and any
+// extraction failure resolves to (and caches) the fallback so it is
+// never retried. The two callers differ only in their key space, value
+// type, fallback, and extractor — so that orchestration lives once here,
+// parameterized over a per-caller `ResolutionStore`.
+
+type ResolutionStore<K, V> = {
+  cache: Map<K, V>;
+  inFlight: Map<K, Promise<V>>;
+};
+
+function createStore<K, V>(): ResolutionStore<K, V> {
+  return { cache: new Map(), inFlight: new Map() };
+}
+
+// `src === null` (no poster_path/logo_path to sample) skips `extract`
+// entirely — no network request. Otherwise `extract` runs at most once
+// per key: its result (success or the fallback, on failure) is cached
+// before the in-flight entry is cleared, so a second call — concurrent
+// or later — never re-invokes it.
+async function resolveCached<K, V>(
+  store: ResolutionStore<K, V>,
+  key: K,
+  src: string | null,
+  fallback: V,
+  extract: (url: string) => Promise<V>,
+): Promise<V> {
+  const cached = store.cache.get(key);
+  if (cached !== undefined) return cached;
+
+  const inFlight = store.inFlight.get(key);
+  if (inFlight) return inFlight;
+
+  if (!src) {
+    store.cache.set(key, fallback);
+    return fallback;
+  }
+
+  const attempt = extract(src)
+    .then((value) => {
+      store.cache.set(key, value);
+      return value;
+    })
+    .catch(() => {
+      store.cache.set(key, fallback);
+      return fallback;
+    })
+    .finally(() => {
+      store.inFlight.delete(key);
+    });
+
+  store.inFlight.set(key, attempt);
+  return attempt;
+}
+
+// Synchronous cache read — never triggers extraction and never observes
+// a still-pending call, even if one is in flight for this key. Lets a
+// first render read an already-resolved value synchronously instead of
+// always waiting a tick for the async path.
+function peekCached<K, V>(store: ResolutionStore<K, V>, key: K): V | null {
+  return store.cache.get(key) ?? null;
+}
+
 // --- §2.2 cache + orchestration ------------------------------------------
 
-type PosterHueEntry = { hue: number; source: "extracted" | "fallback" };
-
 // Module-level, in-memory, keyed by title_id (not poster_path — every
-// card for the same title across the week shares one color). Only
-// resolved (extracted-or-permanently-fallback) results live here;
-// `inFlight` dedupes concurrent extraction attempts for the same
-// title_id so a title appearing in several slots at once triggers only
-// one image decode.
-const posterHueCache = new Map<number, PosterHueEntry>();
-const posterHueInFlight = new Map<number, Promise<number>>();
+// card for the same title across the week shares one color).
+const posterHueStore = createStore<number, number>();
 
-// Resolves the poster-derived hue for a title, extracting at most once
-// per title_id for the life of the session. On any failure (missing
+// Resolves the poster-derived hue for a title. On any failure (missing
 // poster_path, load error, decode error, or too little color signal —
-// see dominantHue) resolves to the deterministic hashHue fallback and
-// caches that outcome so it is never retried. `extract` is injectable
-// (defaults to the real canvas sampler) so this orchestration is
-// testable without a browser.
+// see dominantHue) resolves to the deterministic hashHue fallback.
+// `extract` is injectable (defaults to the real canvas sampler) so this
+// orchestration is testable without a browser.
 export async function posterHue(
   titleId: number,
   posterPath: string,
   extract: (url: string) => Promise<number> = samplePosterHue,
 ): Promise<number> {
-  const cached = posterHueCache.get(titleId);
-  if (cached) return cached.hue;
-
-  const inFlight = posterHueInFlight.get(titleId);
-  if (inFlight) return inFlight;
-
   const fallback = hashHue(titleId);
   const src = posterUrl(posterPath, SAMPLE_SIZE);
-  if (!src) {
-    posterHueCache.set(titleId, { hue: fallback, source: "fallback" });
-    return fallback;
-  }
-
-  const attempt = extract(src)
-    .then((hue) => {
-      posterHueCache.set(titleId, { hue, source: "extracted" });
-      return hue;
-    })
-    .catch(() => {
-      posterHueCache.set(titleId, { hue: fallback, source: "fallback" });
-      return fallback;
-    })
-    .finally(() => {
-      posterHueInFlight.delete(titleId);
-    });
-
-  posterHueInFlight.set(titleId, attempt);
-  return attempt;
+  return resolveCached(posterHueStore, titleId, src, fallback, extract);
 }
 
-// Synchronous read of the resolved poster hue cache — never triggers
-// extraction and never observes a still-pending `posterHue` call, even if
-// one is in flight for this title_id. Lets a first render read an
-// already-resolved value synchronously (spec's zero-flash pattern:
-// hash-first synchronously, silent canvas upgrade once `posterHue`
-// resolves) instead of always waiting a tick for the async path.
+// Spec's zero-flash pattern: hash-first synchronously, silent canvas
+// upgrade once `posterHue` resolves.
 export function peekPosterHue(titleId: number): number | null {
-  return posterHueCache.get(titleId)?.hue ?? null;
+  return peekCached(posterHueStore, titleId);
 }
 
 // --- §5.1 cache + orchestration -------------------------------------------
@@ -268,54 +299,25 @@ export type LogoPlate = "plate-light" | "plate-dark" | "text-fallback";
 // Keyed by provider_id per §5.1 step 1 (there are only a handful of
 // distinct providers across any guide, so this is essentially free after
 // first use) — deliberately not keyed by logo_path, mirroring
-// posterHueCache's title_id keying above.
-const logoPlateCache = new Map<number, LogoPlate>();
-const logoPlateInFlight = new Map<number, Promise<LogoPlate>>();
+// posterHueStore's title_id keying above.
+const logoPlateStore = createStore<number, LogoPlate>();
 
-// Resolves the plate polarity for a provider's logo mark, sampling at
-// most once per provider_id. Empty logo_path skips sampling entirely
-// (no network request, §5.1 step 7). Any load/decode/tainted-canvas
-// failure resolves to "text-fallback", cached so it isn't retried —
-// callers render the plain-text provider name in that case (§5.5).
-// `sample` is injectable (defaults to the real canvas sampler) for the
-// same testability reason as posterHue.
+// Resolves the plate polarity for a provider's logo mark. Empty
+// logo_path resolves straight to "text-fallback" (no network request,
+// §5.1 step 7), as does any load/decode/tainted-canvas failure — callers
+// render the plain-text provider name in that case (§5.5). `sample` is
+// injectable (defaults to the real canvas sampler) for the same
+// testability reason as posterHue.
 export async function logoPlate(
   providerId: number,
   logoPath: string,
   sample: (url: string) => Promise<"plate-light" | "plate-dark"> = sampleLogoPlate,
 ): Promise<LogoPlate> {
-  const cached = logoPlateCache.get(providerId);
-  if (cached) return cached;
-
-  const inFlight = logoPlateInFlight.get(providerId);
-  if (inFlight) return inFlight;
-
   const src = posterUrl(logoPath, SAMPLE_SIZE);
-  if (!src) {
-    logoPlateCache.set(providerId, "text-fallback");
-    return "text-fallback";
-  }
-
-  const attempt: Promise<LogoPlate> = sample(src)
-    .then((plate): LogoPlate => {
-      logoPlateCache.set(providerId, plate);
-      return plate;
-    })
-    .catch((): LogoPlate => {
-      logoPlateCache.set(providerId, "text-fallback");
-      return "text-fallback";
-    })
-    .finally(() => {
-      logoPlateInFlight.delete(providerId);
-    });
-
-  logoPlateInFlight.set(providerId, attempt);
-  return attempt;
+  return resolveCached(logoPlateStore, providerId, src, "text-fallback", sample);
 }
 
-// Synchronous read of the resolved logo plate cache — same semantics as
-// peekPosterHue above: never triggers sampling, never observes a
-// still-pending `logoPlate` call.
+// Same semantics as peekPosterHue above.
 export function peekLogoPlate(providerId: number): LogoPlate | null {
-  return logoPlateCache.get(providerId) ?? null;
+  return peekCached(logoPlateStore, providerId);
 }

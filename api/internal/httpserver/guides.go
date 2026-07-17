@@ -23,10 +23,11 @@ type GuideStore interface {
 	CreateGuideReplacingOverlaps(ctx context.Context, userID int64, startDate, endDate string, seed int64, items []guide.Item) (*store.Guide, error)
 	CurrentGuide(ctx context.Context, userID int64, today string) (*store.Guide, error)
 	GuideWithItems(ctx context.Context, userID, guideID int64) (*store.Guide, error)
-	ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*store.Guide, error)
+	ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*store.Guide, error)
 	UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd store.GuideItemUpdate) (*store.GuideItem, error)
 	DeleteGuideItem(ctx context.Context, userID, guideID, itemID int64) error
 	MarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
+	UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
 	SwapTitle(ctx context.Context, userID, titleID int64, region string) (*store.SwapInfo, error)
 	GuideLookups(ctx context.Context, guideID int64) (map[int64]store.TitleLookup, map[int64]store.ProviderRow, error)
 }
@@ -177,14 +178,14 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 		}
 		days := int(end.Sub(start).Hours()/24) + 1
 
-		// Reusing g.Seed (rather than minting a fresh one) means a first
-		// regenerate with no user edits may still lawfully reshuffle
-		// future unpinned items: the keep list perturbs the same rng/
-		// capacity flow that produced the original guide, so the greedy
-		// fill can land differently even though the seed matches.
-		// Repeated regenerates against an unchanged keep set are stable,
-		// since `keep`/`in` are then identical run to run.
-		in, err := d.buildInput(r.Context(), u, start, days, g.Seed, keep)
+		// Regenerate is a fresh reshuffle, not a replay: it mints a new
+		// seed every call rather than reusing g.Seed, so future unpinned
+		// items are free to land differently each time. Pinned/edited/
+		// watched/past-dated items are keeps regardless (see the loop
+		// above) — they bind to their current date/time/title no matter
+		// what the new seed does with everything else.
+		seed := d.Now().UnixNano()
+		in, err := d.buildInput(r.Context(), u, start, days, seed, keep)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
@@ -211,7 +212,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 			}
 		}
 
-		refreshed, err := d.Guides.ReplaceUnkeptItems(r.Context(), u.ID, gid, keepIDs, newItems)
+		refreshed, err := d.Guides.ReplaceUnkeptItems(r.Context(), u.ID, gid, keepIDs, newItems, seed)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
@@ -327,6 +328,29 @@ func handleWatchItem(d Deps) http.HandlerFunc {
 		}
 		u := userFrom(r.Context())
 		it, err := d.Guides.MarkItemWatched(r.Context(), u.ID, gid, itemID)
+		switch {
+		case errors.Is(err, store.ErrGuideNotFound):
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		case err != nil:
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(it)
+	}
+}
+
+func handleUnwatchItem(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gid, ok1 := pathID(r, "id")
+		itemID, ok2 := pathID(r, "itemID")
+		if !ok1 || !ok2 {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+		u := userFrom(r.Context())
+		it, err := d.Guides.UnmarkItemWatched(r.Context(), u.ID, gid, itemID)
 		switch {
 		case errors.Is(err, store.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")

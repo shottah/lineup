@@ -64,7 +64,11 @@ export function ProviderChip({
 }) {
   const plate = useLogoPlate(providerId, logoPath);
 
-  if (plate !== "plate-light" && plate !== "plate-dark") {
+  // No name means no accessible label to give the standalone chip's
+  // role="img" — rather than emit aria-label="", fall through to the
+  // same text fallback used when the plate hasn't resolved (empty text
+  // for an empty name, i.e. renders nothing).
+  if ((plate !== "plate-light" && plate !== "plate-dark") || !providerName) {
     return variant === "inline" ? <span>{providerName}</span> : <>{providerName}</>;
   }
 

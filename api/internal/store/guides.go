@@ -298,9 +298,12 @@ ORDER BY created_at DESC, id DESC LIMIT 1`, userID, today).Scan(&gid)
 	return s.GuideWithItems(ctx, userID, gid)
 }
 
-// ReplaceUnkeptItems deletes the guide's items not named in keepIDs and
-// inserts newItems, atomically.
-func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*Guide, error) {
+// ReplaceUnkeptItems deletes the guide's items not named in keepIDs,
+// inserts newItems, and persists seed as the guide's new seed, atomically.
+// seed is whatever actually produced newItems (a regenerate mints a fresh
+// one), so a later regenerate chains from that rather than replaying the
+// guide's original seed.
+func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*Guide, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("store: replace items: begin: %w", err)
@@ -314,6 +317,9 @@ func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, k
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: replace items: ownership: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE guides SET seed = $2 WHERE id = $1`, guideID, seed); err != nil {
+		return nil, fmt.Errorf("store: replace items: seed: %w", err)
 	}
 	if keepIDs == nil {
 		keepIDs = []int64{}
@@ -335,7 +341,11 @@ func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, k
 // provider_id is recomputed rather than left stale: kept when the new
 // title also streams on it, else set to the new title's lowest provider
 // id. Empty/nil SwapProviders (title not yet through provider ingestion,
-// #11) leaves provider_id unchanged — best effort until then.
+// #11) leaves provider_id unchanged — best effort until then. A title
+// swap (upd.TitleID set) also deletes any alternate (is_plan=false) row
+// left shadowed in the same guide+date slot: once the plan item itself
+// shows the swapped-in title, an alternate offering that same title is a
+// redundant duplicate of what's already the plan.
 func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd GuideItemUpdate) (*GuideItem, error) {
 	var providers []int64
 	var lowest int64
@@ -348,6 +358,13 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int
 			}
 		}
 	}
+
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: update guide item: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	q := `
 UPDATE guide_items gi SET
   date        = COALESCE($4::date, gi.date),
@@ -366,7 +383,7 @@ UPDATE guide_items gi SET
 FROM guides g
 WHERE gi.id = $3 AND gi.guide_id = $2 AND g.id = gi.guide_id AND g.user_id = $1
 RETURNING ` + guideItemCols
-	it, err := scanGuideItem(s.Pool.QueryRow(ctx, q, userID, guideID, itemID,
+	it, err := scanGuideItem(tx.QueryRow(ctx, q, userID, guideID, itemID,
 		upd.Date, upd.StartMin, upd.DurationMin, upd.TitleID, upd.Season, upd.Episode, upd.Pinned, upd.SetEdited,
 		providers, lowest))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -374,6 +391,21 @@ RETURNING ` + guideItemCols
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: update guide item: %w", err)
+	}
+
+	if upd.TitleID != nil {
+		// Date-wide: a title swapped into the plan stops being offered as
+		// that day's alternate anywhere, not just in the swapped slot.
+		if _, err := tx.Exec(ctx, `
+DELETE FROM guide_items
+WHERE guide_id = $1 AND date = $2::date AND is_plan = false AND title_id = $3 AND id != $4`,
+			guideID, it.Date, *upd.TitleID, itemID); err != nil {
+			return nil, fmt.Errorf("store: update guide item: clear shadowed alternate: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: update guide item: commit: %w", err)
 	}
 	return it, nil
 }
@@ -479,6 +511,118 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("store: watch item: commit: %w", err)
+	}
+	return it, nil
+}
+
+// UnmarkItemWatched reverses MarkItemWatched conditionally: it mirrors the
+// pointer/status writes MarkItemWatched made, but only where nothing has
+// happened since that would make undoing them wrong. guide_items.watched
+// always clears — unwatching an already-unwatched item is a no-op beyond
+// that (idempotent). The pointer and status rollbacks are independent of
+// each other: for a series, the user_titles pointer rolls back to
+// (item.season, item.episode) only if it's still sitting exactly where this
+// item's mark left it (nextPointer(item.season, item.episode) — a later
+// mark that advanced the pointer further, or a season-count change since
+// the mark, leaves it untouched); status reverts from 'watched' to
+// 'rotation' (clearing watched_at) whenever status is still 'watched',
+// regardless of the pointer check — the title may have been completed by a
+// different item than the one being unmarked. For a movie (pointer
+// irrelevant), status reverts under that same status-only rule.
+func (s *Store) UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*GuideItem, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var titleID int64
+	var season, episode int
+	var kind string
+	var watched bool
+	err = tx.QueryRow(ctx, `
+SELECT gi.title_id, gi.season, gi.episode, t.kind, gi.watched
+FROM guide_items gi JOIN guides g ON g.id = gi.guide_id JOIN titles t ON t.id = gi.title_id
+WHERE gi.id = $3 AND gi.guide_id = $2 AND g.user_id = $1
+FOR UPDATE OF gi`, userID, guideID, itemID).Scan(&titleID, &season, &episode, &kind, &watched)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrGuideNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: load: %w", err)
+	}
+
+	if watched {
+		if _, err := tx.Exec(ctx, `UPDATE guide_items SET watched = false WHERE id = $1`, itemID); err != nil {
+			return nil, fmt.Errorf("store: unwatch item: flag: %w", err)
+		}
+
+		if kind == "movie" {
+			if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET status = 'rotation', watched_at = NULL
+WHERE user_id = $1 AND title_id = $2 AND status = 'watched'`, userID, titleID); err != nil {
+				return nil, fmt.Errorf("store: unwatch item: movie revert: %w", err)
+			}
+		} else {
+			var ps, pe int
+			err = tx.QueryRow(ctx, `
+SELECT pointer_season, pointer_episode FROM user_titles
+WHERE user_id = $1 AND title_id = $2 FOR UPDATE`, userID, titleID).Scan(&ps, &pe)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("store: unwatch item: pointer: %w", err)
+			}
+			if err == nil {
+				counts := map[int]int{}
+				crows, cerr := tx.Query(ctx, `SELECT season_number, episode_count FROM title_seasons WHERE title_id = $1`, titleID)
+				if cerr != nil {
+					return nil, fmt.Errorf("store: unwatch item: seasons: %w", cerr)
+				}
+				for crows.Next() {
+					var sn, ec int
+					if cerr := crows.Scan(&sn, &ec); cerr != nil {
+						crows.Close()
+						return nil, fmt.Errorf("store: unwatch item: seasons scan: %w", cerr)
+					}
+					counts[sn] = ec
+				}
+				crows.Close()
+				if cerr := crows.Err(); cerr != nil {
+					return nil, fmt.Errorf("store: unwatch item: seasons rows: %w", cerr)
+				}
+
+				// next is what MarkItemWatched would have set the pointer to
+				// for this item (parked on the item itself past the finale).
+				// The pointer rollback and the status rollback are
+				// independent: the pointer only rolls back if it's still
+				// exactly where this mark left it (a later mark elsewhere may
+				// have pushed it further, or a re-ingest may have changed
+				// season counts so it no longer recomputes to the stored
+				// value); the status rollback fires whenever status is still
+				// 'watched', regardless of the pointer, since the completion
+				// it reflects may have come from a different item entirely.
+				next, _ := nextPointer(season, episode, counts)
+				if next.Season == ps && next.Episode == pe {
+					if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET pointer_season = $3, pointer_episode = $4
+WHERE user_id = $1 AND title_id = $2`, userID, titleID, season, episode); err != nil {
+						return nil, fmt.Errorf("store: unwatch item: pointer revert: %w", err)
+					}
+				}
+				if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET status = 'rotation', watched_at = NULL
+WHERE user_id = $1 AND title_id = $2 AND status = 'watched'`, userID, titleID); err != nil {
+					return nil, fmt.Errorf("store: unwatch item: status revert: %w", err)
+				}
+			}
+		}
+	}
+
+	it, err := scanGuideItem(tx.QueryRow(ctx, `SELECT `+guideItemCols+` FROM guide_items gi WHERE gi.id = $1`, itemID))
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: reload: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: unwatch item: commit: %w", err)
 	}
 	return it, nil
 }

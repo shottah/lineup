@@ -32,8 +32,10 @@ func TestUpsertTitleInsertAndRefresh(t *testing.T) {
 	if time.Since(ti.RefreshedAt) > time.Minute {
 		t.Fatalf("refreshed_at not stamped on insert: %v", ti.RefreshedAt)
 	}
-	// Provider/airing stamps default to epoch = immediately stale.
-	if ti.ProvidersRefreshedAt.Year() != 1970 || ti.AiringsRefreshedAt.Year() != 1970 {
+	// Provider/airing stamps default to epoch = immediately stale. Compare
+	// in UTC: the epoch instant renders as 1969 in zones west of UTC (e.g.
+	// AST), so a local-zone .Year() check is timezone-dependent.
+	if ti.ProvidersRefreshedAt.UTC().Year() != 1970 || ti.AiringsRefreshedAt.UTC().Year() != 1970 {
 		t.Fatalf("class stamps not epoch: %v / %v", ti.ProvidersRefreshedAt, ti.AiringsRefreshedAt)
 	}
 

@@ -29,13 +29,17 @@ export function GenerateBar() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [startDate, setStartDate] = useState(todayLocal);
-  const [days, setDays] = useState(DEFAULT_DAYS);
+  // "" is the empty-field state (user cleared the input) — kept distinct
+  // from 0 so the guard below rejects it explicitly rather than relying
+  // on 0 happening to fall under MIN_DAYS, and so the input can actually
+  // show blank instead of snapping back to "0" while typing.
+  const [days, setDays] = useState<number | "">(DEFAULT_DAYS);
 
   const mutation = useMutation({
     mutationFn: () =>
       api<GuideResponse>("/v1/guides", {
         method: "POST",
-        body: JSON.stringify({ start_date: startDate, days }),
+        body: JSON.stringify({ start_date: startDate, days: days === "" ? 0 : days }),
       }),
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
@@ -52,7 +56,7 @@ export function GenerateBar() {
   const busy = mutation.isPending;
   const today = todayLocal();
   const isValidDays =
-    Number.isInteger(days) && days >= MIN_DAYS && days <= MAX_DAYS;
+    days !== "" && Number.isInteger(days) && days >= MIN_DAYS && days <= MAX_DAYS;
   const isValidDate = startDate >= today;
   const canSubmit = isValidDays && isValidDate;
 
@@ -79,7 +83,7 @@ export function GenerateBar() {
               max={MAX_DAYS}
               step={1}
               value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
+              onChange={(e) => setDays(e.target.value === "" ? "" : Number(e.target.value))}
               className="rounded-lg border border-line bg-panel2 px-3 py-2 text-[13px] font-medium text-ink"
             />
           </label>

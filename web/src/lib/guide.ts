@@ -45,7 +45,12 @@ function providerNameOf(g: GuideResponse, item: GuideItem): string {
   return g.providers[String(item.provider_id)]?.name ?? "";
 }
 
-function epLabel(title: GuideTitleLookup, item: GuideItem): string {
+// Season/episode label for a slot's sub-line (design spec §5.3): used
+// below by toBoardRows' cell sub, and exported so CalendarView can build
+// its own sub-line (a flex row of this label plus a separate provider
+// chip, rather than toCalendarColumns' pre-joined string) without a
+// private copy.
+export function epLabel(title: GuideTitleLookup, item: GuideItem): string {
   return title.kind === "series" ? `S${item.season}E${item.episode}` : "Movie";
 }
 
@@ -54,7 +59,6 @@ export type CalendarSlot = {
   title: GuideTitleLookup;
   providerName: string;
   timeLabel: string;
-  sub: string;
 };
 
 export type CalendarColumn = {
@@ -86,7 +90,6 @@ export function toCalendarColumns(g: GuideResponse, today: string): CalendarColu
           title,
           providerName,
           timeLabel: fmtTime(item.start_min),
-          sub: providerName ? `${epLabel(title, item)} · ${providerName}` : epLabel(title, item),
         };
       });
     return {

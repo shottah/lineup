@@ -34,6 +34,7 @@ type replaceCall struct {
 	userID, guideID int64
 	keepIDs         []int64
 	newItems        []guide.Item
+	seed            int64
 }
 
 // fakeGuides implements GuideStore in memory, recording call args so tests
@@ -153,9 +154,9 @@ func (f *fakeGuides) GuideWithItems(_ context.Context, userID, guideID int64) (*
 	return g, nil
 }
 
-func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*store.Guide, error) {
-	f.replaceArgs = &replaceCall{userID: userID, guideID: guideID, keepIDs: keepIDs, newItems: newItems}
-	g := &store.Guide{ID: guideID, Items: toStoreItems(newItems, 1000)}
+func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*store.Guide, error) {
+	f.replaceArgs = &replaceCall{userID: userID, guideID: guideID, keepIDs: keepIDs, newItems: newItems, seed: seed}
+	g := &store.Guide{ID: guideID, Seed: seed, Items: toStoreItems(newItems, 1000)}
 	f.lastGuide = g
 	return g, nil
 }
@@ -252,6 +253,20 @@ func (f *fakeGuides) MarkItemWatched(_ context.Context, userID, guideID, itemID 
 	}
 	it := f.itemStore[itemID]
 	it.Watched = true
+	cp := *it
+	return &cp, nil
+}
+
+// UnmarkItemWatched mirrors just the route/status wiring the handler test
+// needs (fake, not real reversal semantics — those are covered by the
+// store's DB-backed TestUnmarkItemWatched).
+func (f *fakeGuides) UnmarkItemWatched(_ context.Context, userID, guideID, itemID int64) (*store.GuideItem, error) {
+	owner, ok := f.items[itemID]
+	if !ok || owner.userID != userID || owner.guideID != guideID {
+		return nil, store.ErrGuideNotFound
+	}
+	it := f.itemStore[itemID]
+	it.Watched = false
 	cp := *it
 	return &cp, nil
 }
@@ -433,6 +448,14 @@ func TestRegenerate(t *testing.T) {
 	}
 	if fg.replaceArgs == nil {
 		t.Fatal("ReplaceUnkeptItems was not called")
+	}
+	// Regenerate must mint a fresh seed (d.Now().UnixNano()) rather than
+	// reusing the guide's original seed (999).
+	if fg.replaceArgs.seed != fixedClock.UnixNano() {
+		t.Fatalf("seed = %d, want %d (fixed clock nanos)", fg.replaceArgs.seed, fixedClock.UnixNano())
+	}
+	if fg.replaceArgs.seed == 999 {
+		t.Fatal("regenerate must not reuse the guide's original seed")
 	}
 	wantKeep := []int64{1, 2, 3, 4}
 	if !reflect.DeepEqual(fg.replaceArgs.keepIDs, wantKeep) {
@@ -700,6 +723,37 @@ func TestWatchItem(t *testing.T) {
 	rec2 := do(t, h, http.MethodPost, "/v1/guides/1/items/999/watched", "tok-1", "")
 	if rec2.Code != http.StatusNotFound {
 		t.Fatalf("watch unknown = %d, want 404", rec2.Code)
+	}
+}
+
+func TestUnwatchItem(t *testing.T) {
+	fg := newFakeGuides()
+	fg.setGuide(1, &store.Guide{ID: 1, Items: []store.GuideItem{
+		{ID: 1, Date: "2026-01-09", StartMin: 1140, EndMin: 1170, TitleID: 1, Watched: true},
+	}})
+	h := guidesServer(t, fg)
+
+	rec := do(t, h, http.MethodDelete, "/v1/guides/1/items/1/watched", "tok-1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unwatch = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var got store.GuideItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if got.Watched {
+		t.Fatal("unwatched item still marked watched in response")
+	}
+
+	// Idempotent: unwatching an already-unwatched item is a 200 no-op.
+	rec2 := do(t, h, http.MethodDelete, "/v1/guides/1/items/1/watched", "tok-1", "")
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("re-unwatch = %d, want 200 (body %s)", rec2.Code, rec2.Body.String())
+	}
+
+	rec3 := do(t, h, http.MethodDelete, "/v1/guides/1/items/999/watched", "tok-1", "")
+	if rec3.Code != http.StatusNotFound {
+		t.Fatalf("unwatch unknown = %d, want 404", rec3.Code)
 	}
 }
 
