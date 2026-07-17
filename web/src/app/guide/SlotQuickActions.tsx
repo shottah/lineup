@@ -1,12 +1,8 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-
-import { useToast } from "@/components/Providers";
-import { api } from "@/lib/api";
 import type { GuideItem, GuideTitleLookup } from "@/lib/types";
 
-const GENERIC_ERROR = "Couldn't save — try again.";
+import { useGuideItemMutations } from "./useGuideItemMutations";
 
 export type SlotQuickActionsProps = {
   guideId: number;
@@ -20,40 +16,13 @@ export type SlotQuickActionsProps = {
 // Hover/keyboard shortcut cluster for a calendar slot card (design spec
 // docs/design/guide-card-redesign.md Addendum §A.0-A.10): watched/pin
 // toggles + one-shot remove. Reuses ItemMenu's exact mutation semantics
-// (same endpoints, toasts, invalidations) so the shortcut and the menu
-// stay behaviorally identical — this owns its own mutation instances
-// rather than borrowing ItemMenu's because CalendarView only mounts one
-// or the other (§A.5): the cluster renders while ItemMenu is closed.
+// (same endpoints, toasts, invalidations) via the shared
+// useGuideItemMutations hook, so the shortcut and the menu stay
+// behaviorally identical — this owns its own mutation instances rather
+// than borrowing ItemMenu's because CalendarView only mounts one or the
+// other (§A.5): the cluster renders while ItemMenu is closed.
 export function SlotQuickActions({ guideId, item, title, columnDow }: SlotQuickActionsProps) {
-  const queryClient = useQueryClient();
-  const { show } = useToast();
-
-  const invalidateGuide = () => queryClient.invalidateQueries({ queryKey: ["guide"] });
-  const itemPath = `/v1/guides/${guideId}/items/${item.id}`;
-
-  const watchedM = useMutation({
-    mutationFn: () => api(`${itemPath}/watched`, { method: "POST" }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => {
-      show(`Watched · ${title.name}`);
-      queryClient.invalidateQueries({ queryKey: ["shelf"] });
-    },
-    onSettled: invalidateGuide,
-  });
-
-  const pinM = useMutation({
-    mutationFn: () => api(itemPath, { method: "PATCH", body: JSON.stringify({ pinned: !item.pinned }) }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => show(item.pinned ? "Unpinned" : `Pinned to ${columnDow}`),
-    onSettled: invalidateGuide,
-  });
-
-  const removeM = useMutation({
-    mutationFn: () => api(itemPath, { method: "DELETE" }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => show("Removed — enjoy the free hour"),
-    onSettled: invalidateGuide,
-  });
+  const { watchedM, pinM, removeM } = useGuideItemMutations({ guideId, item, title, columnDow });
 
   const busy = watchedM.isPending || pinM.isPending || removeM.isPending;
 
