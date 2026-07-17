@@ -318,7 +318,11 @@ with `style={{ "--th": hue }}` on the same element.
 - **Watched + hover together:** no special-casing. `opacity-50` on the same
   element the glow paints on means a watched card's hover glow is
   automatically half-intensity — exactly the "watched cards recede" reading
-  we want, for free.
+  we want, for free. (Refined once the hover quick actions land: a watched
+  card un-dims to full opacity *while hovered/focused* so the revealed
+  action buttons clear CSS's opacity cap — see **Addendum §A.6**. The glow is
+  then full-intensity during that hover, by design; the recede reading is
+  preserved at rest, which is when it matters.)
 
 ### 4.3 Board plan cell — no hover state
 
@@ -491,3 +495,328 @@ the safety net.
   that page's providers list is a different information shape (canonical
   availability list, not a single per-slot identity) and deserves its own
   pass.
+
+---
+
+## Addendum: hover quick actions (watched / pin / remove)
+
+Adds three icon-only shortcut buttons to each **calendar slot card** —
+*mark watched*, *pin*, *remove* — revealed on hover/focus so the three
+highest-frequency actions no longer require clicking the card open and
+drilling into `ItemMenu`. Swap, Move, and Details stay in `ItemMenu` only
+(they are multi-step and lower-frequency — see §A.10). Scope is
+`CalendarView.tsx` **only**: the board has no per-item menu to shortcut
+(plan cells are display-only per §4.3; alternate cells already own a
+swap-on-click gesture), so it gets no cluster (§A.7).
+
+This composes with — does not replace — the hover glow/pulse (§4), the tint
+system (§1–2), the time pill (§3), and the logo chip (§5). The cluster is a
+foreground overlay; the glow is a box-shadow on the wrapper; they share the
+same `:hover`/`:focus-within` trigger and never paint on each other.
+
+### A.0 Five decisions (read this first)
+
+1. **A single segmented pill, pinned to the card's top-right corner, inside
+   the time-pill band** — never the title band. The title is the one thing
+   the user explicitly refused to see occluded; anchoring the cluster in the
+   ~24px strip the time pill already lives in (well above the title's top
+   edge) makes title occlusion structurally impossible regardless of how many
+   lines the title wraps to.
+2. **Reuses the existing `group relative` wrapper from §4.2** — the cluster is
+   an absolutely-positioned *sibling* of the card's main button, revealed with
+   the same `group-hover`/`group-focus-within` mechanism as
+   `WatchlistQuickActions`, adapted from a poster scrim to a compact corner
+   chip because guide cards are text, not posters.
+3. **Watched and pin are stateful toggles** (`aria-pressed`, `acc`-family
+   active treatment) reusing `ItemMenu`'s exact mutation semantics; **remove
+   is a one-shot destructive action** (danger token, set apart by a hairline
+   divider), mirroring `ItemMenu`'s immediate Remove.
+4. **On a watched card the whole card un-dims to full opacity while
+   hovered/focused** — the only way to lift revealed controls out of the
+   `opacity-50` cap (CSS opacity composites the whole subtree; a child can
+   never exceed its parent's effective opacity). See §A.6.
+5. **Inline SVG glyphs only** — check, pin (outline↔filled), X — each pinned
+   to an exact `viewBox` and stroke treatment below (§A.4). No icon library.
+
+### A.1 Placement & geometry
+
+The cluster is a sibling of the main `<button>`, mounted inside the
+`guide-card group relative` wrapper (§4.2), and rendered **only when this
+card's `ItemMenu` is closed** (`{!open && ( … )}` — see §A.5, open state).
+
+| Property | Value | Why |
+|---|---|---|
+| Anchor | `absolute right-1.5 top-1.5` (6px inset from top-right) | Sits in the time-pill band, right-aligned |
+| Vertical extent | top ≈ 6px, height ≈ 28px → bottom ≈ 34px | The time pill occupies ≈ y11–31; the title starts at ≈ y34 and grows **downward**, so the cluster never reaches the title even on a 2-line title |
+| Stacking | `z-10` | Above the card body so pointer events hit the buttons, never the main button beneath |
+| Footprint | ≈ 80px wide (`p-0.5` + three `h-6 w-6` buttons + a `w-px` divider) | Fits beside a ~50px time pill on the narrowest 160px column (136px content) |
+
+**Time-pill overlap on the tightest columns:** on sub-130px content widths
+(e.g. a 7-col desktop grid on a ~1024px container) the revealed cluster may
+overlap the time pill's *trailing* edge by a few px. Accepted: the cluster is
+hover-only, the pill's digits are left-aligned and stay legible, and — the
+binding constraint — the **title is never touched**. The alternative
+(reserving flow space for the cluster at rest) would permanently shrink the
+pill even when the cluster is hidden; an absolute overlay costs nothing at
+rest.
+
+### A.2 Exact markup (copy verbatim)
+
+```html
+<!-- sibling of the card's main <button>, inside `guide-card group relative`;
+     render only when this card's ItemMenu is closed: {!open && ( … )} -->
+<div
+  class="pointer-events-none absolute right-1.5 top-1.5 z-10 flex items-center gap-px rounded-full border border-line bg-panel/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+>
+  <!-- Watched toggle -->
+  <button
+    type="button"
+    aria-pressed={item.watched}
+    aria-label={item.watched ? "Mark as not watched" : "Mark as watched"}
+    title={item.watched ? "Mark as not watched" : "Mark as watched"}
+    disabled={busy}
+    onClick={() => watchedM.mutate()}
+    class={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+      item.watched ? "bg-acc-soft text-acc" : "text-mut hover:bg-panel2 hover:text-ink"
+    }`}
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-[13px] w-[13px]" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  </button>
+
+  <!-- Pin toggle -->
+  <button
+    type="button"
+    aria-pressed={item.pinned}
+    aria-label={item.pinned ? "Unpin" : "Pin"}
+    title={item.pinned ? "Unpin" : "Pin"}
+    disabled={busy}
+    onClick={() => pinM.mutate()}
+    class={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+      item.pinned ? "bg-acc-soft text-acc" : "text-mut hover:bg-panel2 hover:text-ink"
+    }`}
+  >
+    <svg viewBox="0 0 24 24" fill={item.pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[14px] w-[14px]" aria-hidden="true">
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  </button>
+
+  <!-- divider: sets the destructive action apart from the two toggles -->
+  <span class="mx-[1px] h-3.5 w-px bg-line" aria-hidden="true"></span>
+
+  <!-- Remove (destructive, one-shot) -->
+  <button
+    type="button"
+    aria-label="Remove"
+    title="Remove"
+    disabled={busy}
+    onClick={() => removeM.mutate()}
+    class="inline-flex h-6 w-6 items-center justify-center rounded-full text-danger transition-colors hover:bg-danger/15 disabled:pointer-events-none disabled:opacity-50"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-[12px] w-[12px]" aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  </button>
+</div>
+```
+
+- **Segmented, not three free-floating buttons.** One rounded-full container
+  (`bg-panel/95` + `border-line` hairline + `shadow-sm` + `backdrop-blur-sm`)
+  holding three 24px buttons reads as a *single* control and is ~30% narrower
+  than three separately-plated pills — the deciding factor on 160px columns.
+  It stays in the `WatchlistQuickActions` design family (translucent plate,
+  backdrop-blur, group-reveal, pointer-events gating) without copying its
+  poster-scrim, which has no meaning on a text card.
+- **`bg-panel/95` (near-opaque), not `/90`.** The cluster floats over a
+  tinted card wash (§2.5); a near-opaque plate keeps the glyphs reading
+  against the neutral chip rather than the hue behind it, matching the time
+  pill's own "sit on the tint, don't blend into it" reasoning (§3).
+- **The divider (`w-px bg-line`) before Remove** groups the two reversible
+  toggles and quarantines the irreversible action, lowering mis-click risk in
+  a small hover target — the same "destructive actions get visual distance"
+  instinct behind `ItemMenu` placing Remove last and `muted`.
+
+### A.3 Reveal mechanics
+
+- Hidden at rest: `opacity-0 pointer-events-none`. Revealed by
+  `group-hover:opacity-100 group-hover:pointer-events-auto` and
+  `group-focus-within:opacity-100 group-focus-within:pointer-events-auto` —
+  the `group` is the §4.2 wrapper (already present in its class string), so no
+  new plumbing.
+- The reveal is **opacity only** (150ms) — no translate, scale, or size
+  change. That keeps it out of the vestibular-motion category (so it needs no
+  `prefers-reduced-motion` gate, §A.9) and keeps it visually independent of
+  the wrapper's 2.4s glow pulse, which continues underneath on its own clock.
+- `pointer-events-none` at rest means the invisible cluster can't be
+  mouse-hit, but leaves the buttons in the tab order for keyboard reveal
+  (§A.8) — identical to `WatchlistQuickActions`.
+- **Suppressed while the `ItemMenu` is open** (`{!open && …}`): once the user
+  has drilled in, the menu carries the same actions (plus Swap/Move/Details),
+  so showing the cluster too would be duplicate, competing controls sitting on
+  top of the expanded menu. Rendering-gate it off; the menu is the superset.
+
+### A.4 Iconography (exact glyphs)
+
+All three share `viewBox="0 0 24 24"`, `stroke="currentColor"`,
+`stroke-linecap="round"`, `stroke-linejoin="round"`, `aria-hidden="true"`
+(the accessible name lives on the button, §A.8). Per-glyph optical sizing so
+they read as one weight despite different footprints.
+
+| Action | Glyph | Path(s) | Stroke / fill | Rendered size |
+|---|---|---|---|---|
+| Watched | Check | `M20 6 9 17l-5-5` | `stroke-width 2.5`, `fill none` | `h-[13px] w-[13px]` |
+| Pin | Pushpin (Lucide `pin`) | `M12 17v5` (stem) + `M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z` (head) | `stroke-width 2`; `fill none` when unpinned, `fill currentColor` when pinned | `h-[14px] w-[14px]` |
+| Remove | X | `M18 6 6 18M6 6l12 12` | `stroke-width 2.5`, `fill none` | `h-[12px] w-[12px]` |
+
+- **Pin outline↔filled is the load-bearing non-color cue.** Toggling the
+  whole `<svg>`'s `fill` between `none` and `currentColor` swaps the pin head
+  from hollow to solid; the stem sub-path (`M12 17v5`) is a zero-area line, so
+  `fill` produces no artifact on it — it stays a stroked stem in both states.
+  This means "pinned" is legible by *shape*, not color alone (§A.8).
+- The X reads optically larger than the check/pin at equal px, so it is drawn
+  one step smaller (`12px` vs `13/14px`) to keep the three visually balanced.
+
+### A.5 The three actions — semantics & states
+
+Each button reuses the **exact** mutation `ItemMenu` already runs, so a
+shortcut and the menu are behaviorally identical (same endpoint, toast, and
+cache invalidation). Implement them in a small `SlotQuickActions` component
+that owns its own three `useMutation`s (the cluster is rendered when
+`ItemMenu` is *not* mounted, so it can't borrow the menu's instances):
+
+| Button | Mutation | Endpoint | Toggle? | Active/toggled treatment |
+|---|---|---|---|---|
+| Watched | `watchedM` | `POST /v1/guides/{gid}/items/{id}/watched` → invalidate `["shelf"]` + `["guide"]`, toast `Watched · {name}` | Yes — `aria-pressed={item.watched}` | `bg-acc-soft text-acc`; label flips to "Mark as not watched"; the whole card is also `opacity-50` at rest (§A.6) |
+| Pin | `pinM` | `PATCH /v1/guides/{gid}/items/{id}` `{ pinned: !item.pinned }` → invalidate `["guide"]`, toast `Unpinned` / `Pinned to {dow}` | Yes — `aria-pressed={item.pinned}` | `bg-acc-soft text-acc` **+ filled pin glyph**; label flips to "Unpin"; the persistent "Pinned" body pill (§CalendarView) is unchanged |
+| Remove | `removeM` | `DELETE /v1/guides/{gid}/items/{id}` → invalidate `["guide"]`, toast `Removed — enjoy the free hour` | No | `text-danger`, `hover:bg-danger/15`; no `aria-pressed`; card disappears on refetch |
+
+- `busy = watchedM.isPending || pinM.isPending || removeM.isPending` disables
+  all three during any pending mutation (`disabled:opacity-50
+  disabled:pointer-events-none`), mirroring `ItemMenu`'s shared `busy` guard
+  against double-fire.
+- **Watched semantics caveat (for the implementer, t1-impl):** `ItemMenu`'s
+  Watched chip today is *mark-only* (`POST …/watched`, no "unwatch"). The
+  button here is specified as a full visual toggle — `aria-pressed` and the
+  active treatment already model both directions — but a working
+  *click-to-unwatch* depends on the mutation/endpoint supporting an off state.
+  If it doesn't yet, that is an API/mutation change (out of scope for this
+  visual spec); the button's states are already correct for the day it lands.
+  Do **not** invent an unwatch endpoint to satisfy the toggle visuals.
+- **Remove has no confirm dialog** — deliberately matching `ItemMenu`'s
+  existing immediate Remove (toast-only). Adding a confirm to the shortcut but
+  not the menu would be inconsistent; a confirm/undo pattern, if wanted, is a
+  separate cross-surface decision (§A.10).
+
+### A.6 Watched-card interaction (the un-dim)
+
+A watched card carries `opacity-50` on the §4.2 wrapper. Because CSS opacity
+composites the entire subtree, a child can **never** exceed its parent's
+effective opacity — so a revealed cluster on a watched card would be stuck at
+50%, which is a legibility (and, for the danger Remove, a contrast) problem.
+
+Resolution: **the watched card un-dims to full opacity while hovered or
+focused.** Refine the §4.2 wrapper's watched conditional and add `opacity` to
+its transition list:
+
+```diff
+- transition-[box-shadow,transform] duration-200 ease-out
++ transition-[box-shadow,transform,opacity] duration-200 ease-out
+  …
+- {watched ? "opacity-50" : ""}
++ {watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}
+```
+
+- At rest the watched card still reads as receded (`opacity-50`) — the state
+  that matters for scanning the week.
+- On hover/focus it fades to full opacity over 200ms, taking the whole card
+  (title, tint, and the child cluster) with it — so the actions you're
+  reaching for are fully opaque and the title you're acting on is finally
+  readable. This is the standard "dimmed item brightens when you engage it"
+  pattern, and it's a genuine usability win beyond just fixing the opacity
+  cap.
+- **Documented trade-off vs §4.2:** during that hover the poster glow is
+  full-intensity, not the half-intensity §4.2 describes for a watched card.
+  Intentional — active interaction warrants full feedback, and the recede
+  reading is preserved at rest. The §4.2 watched bullet carries a
+  cross-reference to here.
+- The un-dim is an opacity fade (no transform/scale) — not vestibular motion,
+  so it is kept under `prefers-reduced-motion` (§A.9).
+
+### A.7 Full state matrix
+
+| State | Quick-action cluster |
+|---|---|
+| Default (no hover/focus) | Not shown — `opacity-0 pointer-events-none`; still in the DOM and tab order |
+| Hover / focus-within (menu closed) | Fades in (150ms) at top-right; the three buttons become interactive |
+| Watched card | Card un-dims to full opacity on hover/focus (§A.6); Watched button active (`bg-acc-soft text-acc`, `aria-pressed=true`, label "Mark as not watched") |
+| Pinned card | Pin button active (`bg-acc-soft text-acc`, **filled** glyph, `aria-pressed=true`, label "Unpin"); the body "Pinned" pill is unchanged |
+| Watched **and** pinned | Both toggles show their active treatment independently |
+| `open` (ItemMenu expanded) | Cluster **not rendered** — the menu supersedes it and carries the same three actions plus Swap/Move/Details |
+| Pending (any of the 3 mutations) | All three buttons `disabled:opacity-50 disabled:pointer-events-none` (shared `busy`, mirrors `ItemMenu`) |
+| Board **plan** cell | **No cluster** — display-only, non-interactive (consistent with §4.3) |
+| Board **alternate** cell (swappable or inert) | **No cluster** — the board has no per-item menu to shortcut; the swappable cell already owns a swap-on-click gesture |
+| `prefers-reduced-motion: reduce` | Cluster still reveals (opacity fade only); §4.1 still disables the card pulse; static glow remains; watched un-dim still applies (opacity, not motion) |
+
+### A.8 Accessibility contract
+
+- **Accessible names.** Every icon button has an `aria-label` **and** a
+  matching `title` (native tooltip). Toggle labels flip with state ("Pin" ↔
+  "Unpin", "Mark as watched" ↔ "Mark as not watched"); Remove is a constant
+  "Remove". Glyph `<svg>`s are `aria-hidden="true"` so the name isn't
+  duplicated.
+- **Toggle state.** `aria-pressed` on Watched and Pin exposes on/off to AT.
+  Remove is a plain action — no `aria-pressed`.
+- **State is never conveyed by color alone** (WCAG 1.4.1): the toggled state
+  adds a *filled segment background* (`bg-acc-soft`) — a shape change — on top
+  of the color shift; Pin additionally swaps outline→filled glyph; Watched is
+  further reinforced by the whole-card dim at rest. AT gets `aria-pressed`
+  regardless.
+- **Hit area** is `h-6 w-6` = 24×24px per button, meeting the 24px minimum
+  even though the glyph is smaller (padding is part of the target).
+- **Keyboard.** Buttons stay in the tab order at rest (`opacity-0` does not
+  remove them; `pointer-events-none` blocks only the pointer). Tabbing to the
+  card's main button fires the wrapper's `:focus-within` → the cluster
+  reveals; tabbing onward reaches Watched → Pin → Remove; Enter/Space
+  activates (unaffected by `pointer-events`). DOM order is main button first,
+  then the cluster, so keyboard flow is "open-the-card, then its shortcuts".
+- **Focus indicator.** The global `button:focus-visible { outline: 2px solid
+  var(--acc); outline-offset: 2px }` (globals.css) applies unchanged — the
+  accent ring is the a11y contract and layers over the cluster's own paint on
+  a separate layer.
+- **Does not steal the card's click.** The cluster buttons are **siblings** of
+  the main button, not nested inside it (nested buttons are invalid HTML
+  anyway). Their clicks target themselves; the card's open-menu handler only
+  fires on the main button. The cluster's `z-10` + `pointer-events-auto` (on
+  reveal) captures pointer events over its whole footprint, so even a click on
+  its padding is a no-op rather than falling through to open the menu. No
+  `stopPropagation` needed.
+- **Contrast.** Idle glyph `text-mut` on `bg-panel/95` clears the 3:1
+  non-text floor; hover raises it to `text-ink`. Active `text-acc` on
+  `bg-acc-soft`, and `text-danger`, both read comfortably on the near-opaque
+  plate in either theme.
+
+### A.9 Reduced motion
+
+The cluster introduces **no new keyframes and no transform/scale** — its
+reveal and the watched un-dim are opacity fades, which are not
+vestibular-triggering motion, so they run unconditionally. Everything else is
+inherited from §4.1: `prefers-reduced-motion: reduce` still removes the 2.4s
+card pulse while the static hover glow (the duplicated 0%/100% shadow)
+remains. Nothing in this addendum needs its own reduced-motion branch.
+
+### A.10 Explicitly out of scope
+
+- **Swap, Move, Details stay in `ItemMenu` only.** They are multi-step
+  (Swap/Move open sub-pickers) or navigational (Details routes away) — wrong
+  shape for a one-tap hover shortcut. Moving a slot to another space is
+  deferred entirely, per the product owner.
+- **Board surfaces get no cluster** (§A.7) — plan cells are display-only,
+  alternates already have a swap gesture, and the board has no per-item menu
+  to shortcut.
+- **No confirm/undo on Remove** — matches `ItemMenu`'s current immediate
+  Remove. A confirm or undo-toast pattern would be a cross-surface change
+  (menu + cluster together) and is out of scope here.
+- **No change to the `ItemMenu` chip styling** (§7) — the cluster is a
+  parallel entry point to the same mutations, not a restyle of the menu.
