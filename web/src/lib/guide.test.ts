@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { GuideResponse } from "./types";
-import { fmtTime, monthDay, toBoardRows, toCalendarColumns } from "./guide";
+import type { GuideItem, GuideResponse, GuideTitleLookup } from "./types";
+import { epLabel, fmtTime, monthDay, toBoardRows, toCalendarColumns } from "./guide";
 
 // Two-day fixture: day 1 has a movie plan (20:00 on provider 8), a
 // watched+pinned series plan (21:30 on provider 9), an alternate sharing
@@ -47,6 +47,33 @@ describe("monthDay", () => {
   });
 });
 
+describe("epLabel", () => {
+  const baseItem: GuideItem = {
+    id: 1,
+    date: "2026-07-20",
+    start_min: 1200,
+    end_min: 1260,
+    title_id: 2,
+    season: 2,
+    episode: 5,
+    provider_id: 9,
+    is_plan: true,
+    pinned: false,
+    edited: false,
+    watched: false,
+  };
+
+  it("formats series as SxEy", () => {
+    const title: GuideTitleLookup = { name: "Severance", kind: "series", tmdb_id: 1, poster_path: "" };
+    expect(epLabel(title, baseItem)).toBe("S2E5");
+  });
+
+  it("labels movies as Movie regardless of season/episode", () => {
+    const title: GuideTitleLookup = { name: "Past Lives", kind: "movie", tmdb_id: 2, poster_path: "" };
+    expect(epLabel(title, { ...baseItem, season: 0, episode: 0 })).toBe("Movie");
+  });
+});
+
 describe("toCalendarColumns", () => {
   const cols = toCalendarColumns(g, "2026-07-20");
 
@@ -68,12 +95,10 @@ describe("toCalendarColumns", () => {
     expect(cols[1].slots).toEqual([]);
   });
 
-  it("resolves sidecars and builds subs", () => {
-    const [movie, series] = cols[0].slots;
+  it("resolves sidecar titles and times", () => {
+    const [movie] = cols[0].slots;
     expect(movie.title.name).toBe("Past Lives");
     expect(movie.timeLabel).toBe("8:00 pm");
-    expect(movie.sub).toBe("Movie · Netflix");
-    expect(series.sub).toBe("S2E5 · Apple TV+");
   });
 });
 

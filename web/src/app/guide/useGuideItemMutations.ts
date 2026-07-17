@@ -31,10 +31,10 @@ export function useGuideItemMutations({ guideId, item, title, columnDow }: UseGu
   const itemPath = `/v1/guides/${guideId}/items/${item.id}`;
 
   const watchedM = useMutation({
-    mutationFn: () => api(`${itemPath}/watched`, { method: "POST" }),
+    mutationFn: () => api(`${itemPath}/watched`, { method: item.watched ? "DELETE" : "POST" }),
     onError: () => show(GENERIC_ERROR),
     onSuccess: () => {
-      show(`Watched · ${title.name}`);
+      show(item.watched ? `Unwatched · ${title.name}` : `Watched · ${title.name}`);
       queryClient.invalidateQueries({ queryKey: ["shelf"] });
     },
     onSettled: invalidateGuide,

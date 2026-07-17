@@ -153,8 +153,8 @@ export function ItemMenu({ guideId, item, title, columnDate, columnDow, columns,
   return (
     <div className="px-2.5 pb-2.5">
       <div className="flex flex-wrap gap-[5px]">
-        <Chip disabled={busy} onClick={() => watchedM.mutate()}>
-          ✓ Watched
+        <Chip disabled={busy} pressed={item.watched} onClick={() => watchedM.mutate()}>
+          {item.watched ? "Unwatch" : "✓ Watched"}
         </Chip>
         <Chip disabled={busy} pressed={item.pinned} onClick={() => pinM.mutate()}>
           {item.pinned ? "Unpin" : "Pin"}

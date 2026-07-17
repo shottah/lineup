@@ -2,10 +2,9 @@
 
 import { useState, type CSSProperties } from "react";
 
-import { toCalendarColumns, type CalendarSlot } from "@/lib/guide";
+import { epLabel, toCalendarColumns, type CalendarSlot } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
-import { epLabel } from "./epLabel";
 import { ItemMenu } from "./ItemMenu";
 import { ProviderChip } from "./ProviderChip";
 import { SlotQuickActions } from "./SlotQuickActions";
