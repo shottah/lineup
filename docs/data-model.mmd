@@ -1,0 +1,145 @@
+%% Lineup data model — UML class diagram (Mermaid)
+%% Source of truth: api/internal/store/migrations/0001_init.up.sql
+%% schedule_prefs document shape: api/internal/prefs/prefs.go
+%%
+%% Conventions
+%%   - One class per table; attribute types are the Postgres column types.
+%%   - PK / FK / UQ markers in the attribute name suffix.
+%%   - Associations carry multiplicities; composition (*--) marks
+%%     ON DELETE CASCADE child rows that cannot outlive their parent.
+%%   - SchedulePrefs is not a table: it is the JSONB document embedded in
+%%     users.schedule_prefs, shown as a nested value object.
+
+classDiagram
+    direction TB
+
+    class User {
+        +BIGINT id PK
+        +TEXT firebase_uid UQ
+        +TEXT email
+        +TEXT display_name
+        +TEXT region
+        +JSONB schedule_prefs
+        +TIMESTAMPTZ created_at
+        +TIMESTAMPTZ updated_at
+    }
+
+    class SchedulePrefs {
+        <<value object>>
+        +map~dow, Window~ windows
+    }
+
+    class Window {
+        <<value object>>
+        +bool enabled
+        +string start
+        +string end
+    }
+
+    class Title {
+        +BIGINT id PK
+        +BIGINT tmdb_id UQ(kind,tmdb_id)
+        +TEXT kind
+        +BIGINT tvmaze_id
+        +TEXT name
+        +TEXT overview
+        +TEXT poster_path
+        +INT runtime_minutes
+        +BOOLEAN airing
+        +TIMESTAMPTZ refreshed_at
+        +TIMESTAMPTZ providers_refreshed_at
+        +TIMESTAMPTZ airings_refreshed_at
+    }
+
+    class Provider {
+        +BIGINT id PK
+        +TEXT name
+        +TEXT logo_path
+    }
+
+    class TitleSeason {
+        +BIGINT title_id PK,FK
+        +INT season_number PK
+        +INT episode_count
+    }
+
+    class TitleAiring {
+        +BIGINT title_id PK,FK
+        +INT season PK
+        +INT episode PK
+        +DATE air_date
+    }
+
+    class TitleProvider {
+        <<association>>
+        +BIGINT title_id PK,FK
+        +TEXT region PK
+        +BIGINT provider_id PK,FK
+    }
+
+    class UserTitle {
+        <<association>>
+        +BIGINT user_id PK,FK
+        +BIGINT title_id PK,FK
+        +TEXT status
+        +NUMERIC rating
+        +BOOLEAN favorite
+        +INT pointer_season
+        +INT pointer_episode
+        +TIMESTAMPTZ added_at
+        +TIMESTAMPTZ watched_at
+    }
+
+    class Guide {
+        +BIGINT id PK
+        +BIGINT user_id FK
+        +DATE start_date
+        +DATE end_date
+        +BIGINT seed
+        +TIMESTAMPTZ created_at
+    }
+
+    class GuideItem {
+        +BIGINT id PK
+        +BIGINT guide_id FK
+        +DATE date
+        +INT start_min
+        +INT end_min
+        +BIGINT title_id FK
+        +INT season
+        +INT episode
+        +BIGINT provider_id FK
+        +BOOLEAN is_plan
+        +BOOLEAN pinned
+        +BOOLEAN edited
+        +BOOLEAN watched
+    }
+
+    %% Embedded document (not a relation)
+    User "1" *-- "1" SchedulePrefs : schedule_prefs JSONB
+    SchedulePrefs "1" *-- "0..7" Window : per day-of-week
+
+    %% Catalog composition (cascade delete with Title)
+    Title "1" *-- "0..*" TitleSeason : seasons
+    Title "1" *-- "0..*" TitleAiring : future episode air dates
+    Title "1" *-- "0..*" TitleProvider : availability
+    Provider "1" o-- "0..*" TitleProvider : per (title, region)
+
+    %% Library (cascade delete with User and Title)
+    User "1" *-- "0..*" UserTitle : shelf entries
+    Title "1" *-- "0..*" UserTitle : status, rating, ep pointer
+
+    %% Planning (cascade delete with User / Guide)
+    User "1" *-- "0..*" Guide : generated weeks
+    Guide "1" *-- "0..*" GuideItem : plan + alternate slots
+    GuideItem "0..*" --> "1" Title : schedules
+    GuideItem "0..*" --> "1" Provider : watch on
+
+    note for Title "kind: movie | series (UQ with tmdb_id)
+runtime_minutes 0 = unknown; engine defaults 45 (series) / 120 (movie)"
+    note for UserTitle "status: none | watchlist | rotation | watched
+rating 0.5-5.0 in half steps; rotation cap 10 (API-enforced)"
+    note for GuideItem "start_min/end_min: minutes from local midnight
+season=0, episode=0 = movie; is_plan=false = alternate row"
+    note for Window "start/end: HH:MM 24h; end 23:59 = midnight sentinel
+keyed by dow: mon..sun"
