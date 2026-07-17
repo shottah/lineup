@@ -7,7 +7,7 @@ import type { GuideItem, GuideResponse, GuideTitleLookup } from "./types";
 const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const UNKNOWN_TITLE: GuideTitleLookup = { name: "Unknown title", kind: "movie", tmdb_id: 0 };
+const UNKNOWN_TITLE: GuideTitleLookup = { name: "Unknown title", kind: "movie", tmdb_id: 0, poster_path: "" };
 
 // "Month D" (e.g. "Jul 20") for a YYYY-MM-DD date — the header's "Week of
 // {Month D}" (#18 Task 3) reuses the same month names and UTC parse as

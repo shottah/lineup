@@ -8,6 +8,9 @@ import { api, ApiError } from "@/lib/api";
 import { toBoardRows, toCalendarColumns, type BoardCell } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
+import { ProviderChip } from "./ProviderChip";
+import { usePosterHue } from "./usePosterHue";
+
 const GENERIC_ERROR = "Couldn't save — try again.";
 
 // toCalendarColumns' dow ("MON") title-cased for the day chips ("Mon")
@@ -108,7 +111,14 @@ export function BoardView({ guide, today }: { guide: GuideResponse; today: strin
               ))}
               {board.rows.map((row) => (
                 <Fragment key={row.providerId}>
-                  <div className="self-center text-[12px] font-semibold text-ink">{row.providerName}</div>
+                  <div className="self-center text-[12px] font-semibold text-ink">
+                    <ProviderChip
+                      variant="standalone"
+                      providerId={row.providerId}
+                      logoPath={guide.providers[String(row.providerId)]?.logo_path ?? ""}
+                      providerName={row.providerName}
+                    />
+                  </div>
                   {row.cells.map((cell, i) => (
                     <div key={board.times[i]?.startMin ?? i} className="min-h-[58px]">
                       {cell.has && (
@@ -138,10 +148,18 @@ function BoardCellView({
   swapPending: boolean;
   onSwap: (vars: SwapVars) => void;
 }) {
+  const hue = usePosterHue(cell.item.title_id, cell.title.poster_path);
+  const tintStyle = { "--th": hue } as CSSProperties;
+
   // Plan cells are the evening's picks — display only, never clickable.
+  // border-acc stays untouched (selection semantic, §2.5) — only the
+  // background gets the poster wash.
   if (cell.item.is_plan) {
     return (
-      <div className="relative h-full rounded-xl border border-acc bg-panel px-3 py-2.5">
+      <div
+        className="relative h-full rounded-xl border border-acc bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] px-3 py-2.5"
+        style={tintStyle}
+      >
         {cell.step !== null && (
           <div className="absolute -top-2 left-3 h-[17px] w-[17px] rounded-full bg-acc text-center text-[10px] font-bold leading-[17px] text-acc-ink">
             {cell.step}
@@ -161,9 +179,18 @@ function BoardCellView({
   );
 
   // No plan item shares this alternate's timeslot — the mapper leaves
-  // swapTargetId unset, and the cell stays inert (no button, no handler).
+  // swapTargetId unset, and the cell stays inert (no button, no handler,
+  // no guide-alt-cell hover treatment) — but it keeps the same wash class
+  // as its interactive sibling for visual consistency (§4.4).
   if (cell.swapTargetId === undefined) {
-    return <div className="h-full rounded-xl bg-panel2 px-3 py-2.5">{body}</div>;
+    return (
+      <div
+        className="h-full rounded-xl bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_4%,var(--color-panel2))] px-3 py-2.5"
+        style={tintStyle}
+      >
+        {body}
+      </div>
+    );
   }
 
   const targetId = cell.swapTargetId;
@@ -172,7 +199,8 @@ function BoardCellView({
       type="button"
       disabled={swapPending}
       onClick={() => onSwap({ targetId, titleId: cell.item.title_id, titleName: cell.title.name })}
-      className="block h-full w-full rounded-xl bg-panel2 px-3 py-2.5 text-left disabled:opacity-50"
+      className="guide-alt-cell block h-full w-full rounded-xl px-3 py-2.5 text-left bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_4%,var(--color-panel2))] transition-shadow duration-200 ease-out hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.3),0_4px_14px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.3)] focus-visible:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.3),0_4px_14px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.3)] disabled:opacity-50"
+      style={tintStyle}
     >
       {body}
     </button>

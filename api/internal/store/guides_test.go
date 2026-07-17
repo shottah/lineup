@@ -46,8 +46,8 @@ func seedGuideWorld(t *testing.T, s *Store) (userID, seriesID, movieID int64) {
 			t.Fatalf("seed exec: %v", err)
 		}
 	}
-	mustExec(`UPDATE titles SET kind='movie', runtime_minutes=120 WHERE id=$1`, movieID)
-	mustExec(`UPDATE titles SET runtime_minutes=60, airing=true WHERE id=$1`, seriesID)
+	mustExec(`UPDATE titles SET kind='movie', runtime_minutes=120, poster_path='/guide-movie.jpg' WHERE id=$1`, movieID)
+	mustExec(`UPDATE titles SET runtime_minutes=60, airing=true, poster_path='/guide-series.jpg' WHERE id=$1`, seriesID)
 	mustExec(`INSERT INTO providers (id, name) VALUES (901,'P901'),(902,'P902') ON CONFLICT DO NOTHING`)
 	mustExec(`INSERT INTO title_providers (title_id, region, provider_id) VALUES ($1,'US',901),($2,'US',902),($1,'GB',902)`, seriesID, movieID)
 	mustExec(`INSERT INTO title_seasons (title_id, season_number, episode_count) VALUES ($1,1,2),($1,2,2)`, seriesID)
@@ -526,16 +526,16 @@ func TestGuideLookups(t *testing.T) {
 		t.Fatalf("seeded series tmdb_id: %v", err)
 	}
 	ser, ok := titles[seriesID]
-	if !ok || ser.Name != "Guide Series" || ser.Kind != "series" || ser.TMDBID != seriesRow.TMDBID {
-		t.Fatalf("titles[seriesID] = %+v, want name=Guide Series kind=series tmdb_id=%d", ser, seriesRow.TMDBID)
+	if !ok || ser.Name != "Guide Series" || ser.Kind != "series" || ser.TMDBID != seriesRow.TMDBID || ser.PosterPath != "/guide-series.jpg" {
+		t.Fatalf("titles[seriesID] = %+v, want name=Guide Series kind=series tmdb_id=%d poster_path=/guide-series.jpg", ser, seriesRow.TMDBID)
 	}
 	var movieRow Title
 	if err := s.Pool.QueryRow(ctx, `SELECT tmdb_id FROM titles WHERE id = $1`, movieID).Scan(&movieRow.TMDBID); err != nil {
 		t.Fatalf("seeded movie tmdb_id: %v", err)
 	}
 	mov, ok := titles[movieID]
-	if !ok || mov.Name != "Guide Movie" || mov.Kind != "movie" || mov.TMDBID != movieRow.TMDBID {
-		t.Fatalf("titles[movieID] = %+v, want name=Guide Movie kind=movie tmdb_id=%d", mov, movieRow.TMDBID)
+	if !ok || mov.Name != "Guide Movie" || mov.Kind != "movie" || mov.TMDBID != movieRow.TMDBID || mov.PosterPath != "/guide-movie.jpg" {
+		t.Fatalf("titles[movieID] = %+v, want name=Guide Movie kind=movie tmdb_id=%d poster_path=/guide-movie.jpg", mov, movieRow.TMDBID)
 	}
 
 	p901, ok := provs[901]

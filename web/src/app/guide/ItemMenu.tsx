@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { useToast } from "@/components/Providers";
 import { api, ApiError } from "@/lib/api";
 import type { Entry, GuideItem, GuideTitleLookup, ShelfResponse } from "@/lib/types";
 
-const GENERIC_ERROR = "Couldn't save — try again.";
+import { GENERIC_ERROR, useGuideItemMutations } from "./useGuideItemMutations";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -81,8 +80,6 @@ export type ItemMenuProps = {
 // it: Watched/Pin leave the row open for further actions, and Remove makes
 // the card (and this menu) disappear on its own once the guide refetches.
 export function ItemMenu({ guideId, item, title, columnDate, columnDow, columns, onClose }: ItemMenuProps) {
-  const queryClient = useQueryClient();
-  const { show } = useToast();
   const router = useRouter();
 
   const [swapOpen, setSwapOpen] = useState(false);
@@ -90,24 +87,11 @@ export function ItemMenu({ guideId, item, title, columnDate, columnDow, columns,
   const [moveDate, setMoveDate] = useState(columnDate);
   const [moveTime, setMoveTime] = useState(() => hhmm(item.start_min));
 
-  const invalidateGuide = () => queryClient.invalidateQueries({ queryKey: ["guide"] });
-  const itemPath = `/v1/guides/${guideId}/items/${item.id}`;
-
-  const watchedM = useMutation({
-    mutationFn: () => api(`${itemPath}/watched`, { method: "POST" }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => {
-      show(`Watched · ${title.name}`);
-      queryClient.invalidateQueries({ queryKey: ["shelf"] });
-    },
-    onSettled: invalidateGuide,
-  });
-
-  const pinM = useMutation({
-    mutationFn: () => api(itemPath, { method: "PATCH", body: JSON.stringify({ pinned: !item.pinned }) }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => show(item.pinned ? "Unpinned" : `Pinned to ${columnDow}`),
-    onSettled: invalidateGuide,
+  const { show, invalidateGuide, itemPath, watchedM, pinM, removeM } = useGuideItemMutations({
+    guideId,
+    item,
+    title,
+    columnDow,
   });
 
   const swapM = useMutation({
@@ -136,13 +120,6 @@ export function ItemMenu({ guideId, item, title, columnDate, columnDow, columns,
       show("Moved");
       onClose();
     },
-    onSettled: invalidateGuide,
-  });
-
-  const removeM = useMutation({
-    mutationFn: () => api(itemPath, { method: "DELETE" }),
-    onError: () => show(GENERIC_ERROR),
-    onSuccess: () => show("Removed — enjoy the free hour"),
     onSettled: invalidateGuide,
   });
 

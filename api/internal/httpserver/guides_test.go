@@ -171,7 +171,7 @@ func (f *fakeGuides) GuideLookups(_ context.Context, guideID int64) (map[int64]s
 		return titles, provs, nil
 	}
 	for _, it := range f.lastGuide.Items {
-		titles[it.TitleID] = store.TitleLookup{Name: fmt.Sprintf("Title %d", it.TitleID), Kind: "series", TMDBID: it.TitleID + 100000}
+		titles[it.TitleID] = store.TitleLookup{Name: fmt.Sprintf("Title %d", it.TitleID), Kind: "series", TMDBID: it.TitleID + 100000, PosterPath: fmt.Sprintf("/p%d.jpg", it.TitleID)}
 		provs[it.ProviderID] = store.ProviderRow{ID: it.ProviderID, Name: fmt.Sprintf("Provider %d", it.ProviderID), LogoPath: ""}
 	}
 	return titles, provs, nil
@@ -732,7 +732,7 @@ func TestCurrentGuideCarriesSidecars(t *testing.T) {
 	}
 	for _, it := range body.Items {
 		tl, ok := body.Titles[strconv.FormatInt(it.TitleID, 10)]
-		if !ok || tl.Name == "" {
+		if !ok || tl.Name == "" || tl.PosterPath == "" {
 			t.Fatalf("titles[%d] missing/empty: %+v", it.TitleID, body.Titles)
 		}
 		pr, ok := body.Providers[strconv.FormatInt(it.ProviderID, 10)]
