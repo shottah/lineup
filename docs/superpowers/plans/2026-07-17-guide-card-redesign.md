@@ -48,6 +48,16 @@ Gate; commit: `feat(web): guide card redesign — pill, logo chips, tints, hover
 
 ---
 
+### Task 3b: Web — hover quick-action cluster (user addition, 2026-07-17)
+
+**Files:** `web/src/app/guide/CalendarView.tsx` (and a small extracted component if the cluster warrants it, e.g. `web/src/app/guide/SlotQuickActions.tsx`).
+
+Per the BINDING addendum section "Addendum: hover quick actions (watched / pin / remove)" (§A.0–A.10) in `docs/design/guide-card-redesign.md`: segmented pill cluster at card top-right in the time-pill band (never occluding the title), `opacity-0` → `group-hover`/`group-focus-within` reveal with pointer-events gating, suppressed while ItemMenu is open; inline SVG glyphs exactly as specified (check / pin outline↔filled / X with divider); watched & pin as `aria-pressed` toggles reusing ItemMenu's EXACT mutations/toasts/invalidations; remove one-shot destructive (no confirm, mirrors menu); watched card un-dims on hover/focus per addendum; ≥24px hit areas, aria-label + title per button; reduced-motion per addendum. Board views get NO cluster (addendum scoping). Move/Swap/Details stay in ItemMenu only — explicitly out of scope per user.
+
+Gate; commit: `feat(web): hover quick actions on calendar slot cards`
+
+---
+
 ### Task 4: Final review + PR (no auto-merge)
 
 Fable whole-branch review (designer-spec fidelity via the state matrix; extraction correctness incl. cache/fallback; no behavior drift in views; a11y of chips; reduced-motion). Fix cycle if needed. Push, PR closing #47. Restart the :8080 API per the VERIFIED procedure (single-port lsof kills, confirm pid death, confirm new listener start time — see memory/ledger 2026-07-16). The user's hover-feel pass gates the merge.
