@@ -28,15 +28,6 @@ export function hashHue(titleId: number): number {
   return Number((BigInt(titleId) * BigInt(2654435761)) % BigInt(360));
 }
 
-// --- §1 hue/token composition -------------------------------------------
-
-// The base tint color: hue is a concrete value (already resolved via
-// hashHue or posterHue), s/l stay as the CSS custom properties defined
-// per-theme in globals.css so the same string adapts across themes.
-export function tintFromHue(hue: number): string {
-  return `hsl(${hue} var(--tint-s) var(--tint-l))`;
-}
-
 // --- §2.3 steps 3–6: pixel → hue color math (pure, DOM-free) ------------
 
 export type Rgb = { r: number; g: number; b: number };

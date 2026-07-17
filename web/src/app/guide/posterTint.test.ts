@@ -11,7 +11,6 @@ import {
   peekPosterHue,
   posterHue,
   rgbToHsl,
-  tintFromHue,
 } from "./posterTint";
 
 describe("hashHue", () => {
@@ -44,16 +43,6 @@ describe("hashHue", () => {
   });
 });
 
-describe("tintFromHue", () => {
-  it("composes the hue with the --tint-s/--tint-l custom properties per §1", () => {
-    expect(tintFromHue(210)).toBe("hsl(210 var(--tint-s) var(--tint-l))");
-  });
-
-  it("embeds the exact hue passed in, not var(--th)", () => {
-    expect(tintFromHue(0)).toContain("hsl(0 ");
-    expect(tintFromHue(359)).toContain("hsl(359 ");
-  });
-});
 
 describe("rgbToHsl", () => {
   it("converts primary colors", () => {
