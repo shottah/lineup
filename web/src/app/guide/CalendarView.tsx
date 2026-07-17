@@ -8,6 +8,7 @@ import type { GuideResponse } from "@/lib/types";
 import { epLabel } from "./epLabel";
 import { ItemMenu } from "./ItemMenu";
 import { ProviderChip } from "./ProviderChip";
+import { SlotQuickActions } from "./SlotQuickActions";
 import { usePosterHue } from "./usePosterHue";
 
 // The 7-column calendar: desktop grid, below-lg a horizontal snap-scroll
@@ -94,7 +95,7 @@ function CalendarSlotCard({
 
   return (
     <div
-      className={`guide-card group relative rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${watched ? "opacity-50" : ""}`}
+      className={`guide-card group relative rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,transform,opacity] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}`}
       style={{ "--th": hue } as CSSProperties}
     >
       <button
@@ -130,6 +131,9 @@ function CalendarSlotCard({
           </span>
         )}
       </button>
+      {!open && (
+        <SlotQuickActions guideId={guide.id} item={slot.item} title={slot.title} columnDow={columnDow} />
+      )}
       {open && (
         <ItemMenu
           guideId={guide.id}
