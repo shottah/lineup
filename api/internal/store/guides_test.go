@@ -517,6 +517,83 @@ func TestUpdateGuideItemSwapClearsShadowedAlternate(t *testing.T) {
 	}
 }
 
+// TestUpdateGuideItemSwapClearsAlternateDateWide pins down the DELETE's
+// date-wide scope: once a title is swapped into a plan item, it stops being
+// offered as an alternate ANYWHERE on that date, not just in the swapped
+// slot. Two alternates for the swapped-in title at different start_min
+// slots on the same date must both be removed, while an alternate for that
+// same title on a different date, and the patched plan row itself, survive.
+func TestUpdateGuideItemSwapClearsAlternateDateWide(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, _ := seedGuideWorld(t, s)
+
+	altSeries := seedTitle(t, s, "Alt Series Date-Wide")
+	if _, err := s.UpsertEntry(ctx, uid, altSeries, EntryUpdate{Status: strp("rotation")}); err != nil {
+		t.Fatalf("seed alt rotation: %v", err)
+	}
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		// Plan item to be swapped, at one slot on 2026-01-05.
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		// Same-date alternate in the SAME slot as the plan item -> deleted.
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: altSeries, Provider: 902, IsPlan: false},
+		// Same-date alternate in a DIFFERENT slot -> also deleted (date-wide,
+		// not slot-scoped).
+		{Date: "2026-01-05", StartMin: 600, EndMin: 660, TitleID: altSeries, Provider: 902, IsPlan: false},
+		// Same title, different date -> survives.
+		{Date: "2026-01-06", StartMin: 600, EndMin: 660, TitleID: altSeries, Provider: 902, IsPlan: false},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var planID int64
+	for _, it := range g.Items {
+		if it.IsPlan {
+			planID = it.ID
+		}
+	}
+	if planID == 0 {
+		t.Fatalf("no plan item seeded: %+v", g.Items)
+	}
+
+	sz, ez := 0, 0
+	if _, err := s.UpdateGuideItem(ctx, uid, g.ID, planID, GuideItemUpdate{
+		TitleID: &altSeries, Season: &sz, Episode: &ez, SetEdited: true,
+	}); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+
+	got, err := s.GuideWithItems(ctx, uid, g.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items after swap = %d, want 2 (patched plan + other-date alternate): %+v", len(got.Items), got.Items)
+	}
+	var sawPatchedPlan, sawOtherDate bool
+	for _, it := range got.Items {
+		if it.IsPlan && it.Date == "2026-01-05" && it.StartMin == 1140 {
+			if it.TitleID != altSeries {
+				t.Fatalf("patched plan item title = %d, want %d: %+v", it.TitleID, altSeries, it)
+			}
+			sawPatchedPlan = true
+		}
+		if !it.IsPlan && it.Date == "2026-01-05" {
+			t.Fatalf("same-date alternate survived: %+v", it)
+		}
+		if !it.IsPlan && it.Date == "2026-01-06" && it.TitleID == altSeries {
+			sawOtherDate = true
+		}
+	}
+	if !sawPatchedPlan {
+		t.Fatal("patched plan row missing after swap")
+	}
+	if !sawOtherDate {
+		t.Fatal("same-title alternate on a different date was wrongly deleted")
+	}
+}
+
 // TestCreateGuideOverlapTouchAdjacency ports the final-review probe on the
 // overlap-replacement boundary: a guide starting the day AFTER another ends
 // doesn't overlap it (both survive), but one starting ON the other's end

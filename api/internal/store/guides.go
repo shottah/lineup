@@ -394,6 +394,8 @@ RETURNING ` + guideItemCols
 	}
 
 	if upd.TitleID != nil {
+		// Date-wide: a title swapped into the plan stops being offered as
+		// that day's alternate anywhere, not just in the swapped slot.
 		if _, err := tx.Exec(ctx, `
 DELETE FROM guide_items
 WHERE guide_id = $1 AND date = $2::date AND is_plan = false AND title_id = $3 AND id != $4`,
