@@ -20,9 +20,9 @@ const g: GuideResponse = {
     { id: 14, date: "2026-07-20", start_min: 1290, end_min: 1350, title_id: 5, season: 4, episode: 1, provider_id: 8, is_plan: false, pinned: false, edited: false, watched: false },
   ],
   titles: {
-    "1": { name: "Past Lives", kind: "movie", tmdb_id: 666277 },
-    "2": { name: "Severance", kind: "series", tmdb_id: 95396 },
-    "3": { name: "Slow Horses", kind: "series", tmdb_id: 95480 },
+    "1": { name: "Past Lives", kind: "movie", tmdb_id: 666277, poster_path: "/pl.jpg" },
+    "2": { name: "Severance", kind: "series", tmdb_id: 95396, poster_path: "/sev.jpg" },
+    "3": { name: "Slow Horses", kind: "series", tmdb_id: 95480, poster_path: "/sh.jpg" },
   },
   providers: {
     "8": { id: 8, name: "Netflix", logo_path: "/n.jpg" },
