@@ -12,6 +12,8 @@
   --accInk: #14161a;
   --accSoft: rgba(157, 151, 207, 0.14);
   --danger: #c96a6a;
+  --tint-s: 40%;
+  --tint-l: 50%;
 }
 
 [data-lt="light"] {
@@ -26,6 +28,8 @@
   --accInk: #ffffff;
   --accSoft: rgba(106, 99, 176, 0.11);
   --danger: #c96a6a;
+  --tint-s: 48%;
+  --tint-l: 42%;
 }
 
 @theme inline {
@@ -55,4 +59,44 @@ body {
   background: var(--bg);
   color: var(--ink);
   transition: background 0.25s;
+}
+
+/* Guide card redesign (#47, docs/design/guide-card-redesign.md §4.1): hover
+   pulse for poster-tinted calendar/board cards. --th (hue) is set inline
+   per card; --tint-s/--tint-l are the theme tokens above. */
+@keyframes guide-card-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.45),
+      0 6px 18px -6px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.6),
+      0 8px 24px -6px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.55);
+  }
+}
+
+@keyframes guide-alt-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.3),
+      0 4px 14px -6px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.42),
+      0 6px 18px -6px hsl(var(--th) var(--tint-s) var(--tint-l) / 0.42);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .guide-card:hover,
+  .guide-card:focus-within {
+    animation: guide-card-pulse 2.4s ease-in-out infinite;
+  }
+  .guide-alt-cell:hover,
+  .guide-alt-cell:focus-visible {
+    animation: guide-alt-pulse 2.4s ease-in-out infinite;
+  }
 }
