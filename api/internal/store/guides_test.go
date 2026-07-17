@@ -575,6 +575,91 @@ func TestUnmarkItemWatched(t *testing.T) {
 		}
 	})
 
+	t.Run("stale pointer guard from re-ingest still reverts status", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s) // S1=2 eps, S2=2 eps; pointer starts 1/1
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 2, Episode: 2, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("watch finale: %v", err)
+		}
+		me := entryOf(t, s, uid, seriesID)
+		if me.Status != "watched" || me.WatchedAt == nil || me.Pointer != (Pointer{Season: 2, Episode: 2}) {
+			t.Fatalf("after watch finale = %+v", me)
+		}
+
+		// Simulate a re-ingest widening season 2 between mark and unmark.
+		// nextPointer(item.season, item.episode) now recomputes to 2/3
+		// instead of the pointer this mark actually stored (2/2), so the
+		// pointer-equality guard fails even though status is still
+		// 'watched' from this exact mark.
+		if _, err := s.Pool.Exec(ctx, `UPDATE title_seasons SET episode_count = 3 WHERE title_id = $1 AND season_number = 2`, seriesID); err != nil {
+			t.Fatalf("widen season: %v", err)
+		}
+
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("unwatch: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("unwatched item still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, seriesID)
+		if me.Status != "rotation" || me.WatchedAt != nil {
+			t.Fatalf("after unwatch with stale pointer guard = %+v, want status=rotation watched_at=nil (status reverts independent of the pointer match)", me)
+		}
+	})
+
+	t.Run("finale completed via a different item still reverts status on earlier unmark", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s) // S1=2 eps, S2=2 eps; pointer starts 1/1
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+			{Date: "2026-01-06", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 2, Episode: 2, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil { // A: S1E1 -> pointer 1/2
+			t.Fatalf("watch A: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[1].ID); err != nil { // B: S2E2 finale -> status watched, pointer 2/2
+			t.Fatalf("watch finale B: %v", err)
+		}
+		me := entryOf(t, s, uid, seriesID)
+		if me.Status != "watched" || me.WatchedAt == nil || me.Pointer != (Pointer{Season: 2, Episode: 2}) {
+			t.Fatalf("after finale via B = %+v", me)
+		}
+
+		// Unmark the EARLIER item A. nextPointer(1,1) = 1/2, which does not
+		// match the current pointer (2/2, advanced further by B's finale
+		// mark), so the pointer guard fails and the pointer must stay put
+		// -- but status must still revert, since the title really is no
+		// longer complete once any of its completing marks is undone.
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("unmark A: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("unmarked item A still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, seriesID)
+		if me.Pointer != (Pointer{Season: 2, Episode: 2}) {
+			t.Fatalf("pointer after unmark A = %+v, want untouched 2/2", me.Pointer)
+		}
+		if me.Status != "rotation" || me.WatchedAt != nil {
+			t.Fatalf("status after unmark A = %+v, want rotation/nil (status reverts independent of the stale pointer guard)", me)
+		}
+	})
+
 	t.Run("movie auto-complete reversal", func(t *testing.T) {
 		s := testStore(t)
 		ctx := context.Background()

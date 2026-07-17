@@ -487,13 +487,16 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 // pointer/status writes MarkItemWatched made, but only where nothing has
 // happened since that would make undoing them wrong. guide_items.watched
 // always clears — unwatching an already-unwatched item is a no-op beyond
-// that (idempotent). For a series, the user_titles pointer rolls back to
+// that (idempotent). The pointer and status rollbacks are independent of
+// each other: for a series, the user_titles pointer rolls back to
 // (item.season, item.episode) only if it's still sitting exactly where this
 // item's mark left it (nextPointer(item.season, item.episode) — a later
-// mark that advanced the pointer further leaves it untouched), and status
-// reverts from 'watched' to 'rotation' (clearing watched_at) alongside that
-// same check. For a movie (pointer irrelevant), status reverts whenever
-// it's still 'watched'.
+// mark that advanced the pointer further, or a season-count change since
+// the mark, leaves it untouched); status reverts from 'watched' to
+// 'rotation' (clearing watched_at) whenever status is still 'watched',
+// regardless of the pointer check — the title may have been completed by a
+// different item than the one being unmarked. For a movie (pointer
+// irrelevant), status reverts under that same status-only rule.
 func (s *Store) UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*GuideItem, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -557,19 +560,26 @@ WHERE user_id = $1 AND title_id = $2 FOR UPDATE`, userID, titleID).Scan(&ps, &pe
 
 				// next is what MarkItemWatched would have set the pointer to
 				// for this item (parked on the item itself past the finale).
-				// If the pointer is still exactly there, this mark's advance
-				// is still the latest and gets undone; a later mark that
-				// pushed the pointer further leaves it alone.
+				// The pointer rollback and the status rollback are
+				// independent: the pointer only rolls back if it's still
+				// exactly where this mark left it (a later mark elsewhere may
+				// have pushed it further, or a re-ingest may have changed
+				// season counts so it no longer recomputes to the stored
+				// value); the status rollback fires whenever status is still
+				// 'watched', regardless of the pointer, since the completion
+				// it reflects may have come from a different item entirely.
 				next, _ := nextPointer(season, episode, counts)
 				if next.Season == ps && next.Episode == pe {
 					if _, err := tx.Exec(ctx, `
-UPDATE user_titles SET
-  pointer_season = $3, pointer_episode = $4,
-  status = CASE WHEN status = 'watched' THEN 'rotation' ELSE status END,
-  watched_at = CASE WHEN status = 'watched' THEN NULL ELSE watched_at END
+UPDATE user_titles SET pointer_season = $3, pointer_episode = $4
 WHERE user_id = $1 AND title_id = $2`, userID, titleID, season, episode); err != nil {
-						return nil, fmt.Errorf("store: unwatch item: revert: %w", err)
+						return nil, fmt.Errorf("store: unwatch item: pointer revert: %w", err)
 					}
+				}
+				if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET status = 'rotation', watched_at = NULL
+WHERE user_id = $1 AND title_id = $2 AND status = 'watched'`, userID, titleID); err != nil {
+					return nil, fmt.Errorf("store: unwatch item: status revert: %w", err)
 				}
 			}
 		}
