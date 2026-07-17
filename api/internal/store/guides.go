@@ -298,9 +298,12 @@ ORDER BY created_at DESC, id DESC LIMIT 1`, userID, today).Scan(&gid)
 	return s.GuideWithItems(ctx, userID, gid)
 }
 
-// ReplaceUnkeptItems deletes the guide's items not named in keepIDs and
-// inserts newItems, atomically.
-func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*Guide, error) {
+// ReplaceUnkeptItems deletes the guide's items not named in keepIDs,
+// inserts newItems, and persists seed as the guide's new seed, atomically.
+// seed is whatever actually produced newItems (a regenerate mints a fresh
+// one), so a later regenerate chains from that rather than replaying the
+// guide's original seed.
+func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*Guide, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("store: replace items: begin: %w", err)
@@ -314,6 +317,9 @@ func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, k
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: replace items: ownership: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE guides SET seed = $2 WHERE id = $1`, guideID, seed); err != nil {
+		return nil, fmt.Errorf("store: replace items: seed: %w", err)
 	}
 	if keepIDs == nil {
 		keepIDs = []int64{}
@@ -335,7 +341,11 @@ func (s *Store) ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, k
 // provider_id is recomputed rather than left stale: kept when the new
 // title also streams on it, else set to the new title's lowest provider
 // id. Empty/nil SwapProviders (title not yet through provider ingestion,
-// #11) leaves provider_id unchanged — best effort until then.
+// #11) leaves provider_id unchanged — best effort until then. A title
+// swap (upd.TitleID set) also deletes any alternate (is_plan=false) row
+// left shadowed in the same guide+date slot: once the plan item itself
+// shows the swapped-in title, an alternate offering that same title is a
+// redundant duplicate of what's already the plan.
 func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd GuideItemUpdate) (*GuideItem, error) {
 	var providers []int64
 	var lowest int64
@@ -348,6 +358,13 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int
 			}
 		}
 	}
+
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: update guide item: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	q := `
 UPDATE guide_items gi SET
   date        = COALESCE($4::date, gi.date),
@@ -366,7 +383,7 @@ UPDATE guide_items gi SET
 FROM guides g
 WHERE gi.id = $3 AND gi.guide_id = $2 AND g.id = gi.guide_id AND g.user_id = $1
 RETURNING ` + guideItemCols
-	it, err := scanGuideItem(s.Pool.QueryRow(ctx, q, userID, guideID, itemID,
+	it, err := scanGuideItem(tx.QueryRow(ctx, q, userID, guideID, itemID,
 		upd.Date, upd.StartMin, upd.DurationMin, upd.TitleID, upd.Season, upd.Episode, upd.Pinned, upd.SetEdited,
 		providers, lowest))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -374,6 +391,19 @@ RETURNING ` + guideItemCols
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: update guide item: %w", err)
+	}
+
+	if upd.TitleID != nil {
+		if _, err := tx.Exec(ctx, `
+DELETE FROM guide_items
+WHERE guide_id = $1 AND date = $2::date AND is_plan = false AND title_id = $3 AND id != $4`,
+			guideID, it.Date, *upd.TitleID, itemID); err != nil {
+			return nil, fmt.Errorf("store: update guide item: clear shadowed alternate: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: update guide item: commit: %w", err)
 	}
 	return it, nil
 }

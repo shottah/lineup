@@ -211,7 +211,7 @@ func TestReplaceUnkeptItems(t *testing.T) {
 	keepID := g.Items[0].ID
 	got, err := s.ReplaceUnkeptItems(ctx, uid, g.ID, []int64{keepID}, []guide.Item{
 		{Date: "2026-01-07", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 2, Episode: 1, Provider: 901, IsPlan: true},
-	})
+	}, 777)
 	if err != nil {
 		t.Fatalf("replace: %v", err)
 	}
@@ -221,7 +221,21 @@ func TestReplaceUnkeptItems(t *testing.T) {
 	if got.Items[0].ID != keepID || got.Items[1].Season != 2 {
 		t.Fatalf("replace result = %+v", got.Items)
 	}
-	if _, err := s.ReplaceUnkeptItems(ctx, seedUser(t, s), g.ID, nil, nil); !errors.Is(err, ErrGuideNotFound) {
+	// The fresh seed passed in must persist to the guides row, distinct
+	// from the seed the guide was originally created with (1), so a later
+	// regenerate chains from what actually produced these items rather
+	// than replaying the stale original seed.
+	if got.Seed != 777 {
+		t.Fatalf("seed = %d, want 777 (persisted fresh seed, not the original create seed 1)", got.Seed)
+	}
+	reloaded, err := s.GuideWithItems(ctx, uid, g.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Seed != 777 {
+		t.Fatalf("reloaded seed = %d, want 777 (persisted, not just echoed in the return value)", reloaded.Seed)
+	}
+	if _, err := s.ReplaceUnkeptItems(ctx, seedUser(t, s), g.ID, nil, nil, 1); !errors.Is(err, ErrGuideNotFound) {
 		t.Fatalf("foreign replace err = %v", err)
 	}
 }
@@ -428,6 +442,78 @@ func TestUpdateGuideItemSwapProvider(t *testing.T) {
 	})
 	if err != nil || it.ProviderID != 902 {
 		t.Fatalf("swap to bare title = %+v, %v, want provider_id unchanged at 902", it, err)
+	}
+}
+
+// TestUpdateGuideItemSwapClearsShadowedAlternate covers Task 2's
+// swap-clears-alternate fix: swapping a plan item to a title that already
+// appears as an alternate in the SAME slot (guide_id + date) must delete
+// that now-redundant alternate row, while alternates for other titles and
+// other dates survive untouched.
+func TestUpdateGuideItemSwapClearsShadowedAlternate(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, movieID := seedGuideWorld(t, s)
+
+	altSeries := seedTitle(t, s, "Alt Series")
+	if _, err := s.UpsertEntry(ctx, uid, altSeries, EntryUpdate{Status: strp("rotation")}); err != nil {
+		t.Fatalf("seed alt rotation: %v", err)
+	}
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		// Plan item to be swapped, sharing its date/slot with two alternates.
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		// Shadowed alternate: same date, same title as the swap target -> deleted.
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: altSeries, Provider: 902, IsPlan: false},
+		// Different title, same date -> survives.
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: movieID, Provider: 902, IsPlan: false},
+		// Same title, different date -> survives.
+		{Date: "2026-01-06", StartMin: 1140, EndMin: 1200, TitleID: altSeries, Provider: 902, IsPlan: false},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var planID int64
+	for _, it := range g.Items {
+		if it.IsPlan {
+			planID = it.ID
+		}
+	}
+	if planID == 0 {
+		t.Fatalf("no plan item seeded: %+v", g.Items)
+	}
+
+	sz, ez := 0, 0
+	if _, err := s.UpdateGuideItem(ctx, uid, g.ID, planID, GuideItemUpdate{
+		TitleID: &altSeries, Season: &sz, Episode: &ez, SetEdited: true,
+	}); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+
+	got, err := s.GuideWithItems(ctx, uid, g.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.Items) != 3 {
+		t.Fatalf("items after swap = %d, want 3 (plan + 2 surviving alternates): %+v", len(got.Items), got.Items)
+	}
+	var sawOtherTitle, sawOtherDate bool
+	for _, it := range got.Items {
+		if !it.IsPlan && it.Date == "2026-01-05" && it.TitleID == altSeries {
+			t.Fatalf("shadowed alternate survived: %+v", it)
+		}
+		if !it.IsPlan && it.Date == "2026-01-05" && it.TitleID == movieID {
+			sawOtherTitle = true
+		}
+		if !it.IsPlan && it.Date == "2026-01-06" && it.TitleID == altSeries {
+			sawOtherDate = true
+		}
+	}
+	if !sawOtherTitle {
+		t.Fatal("different-title alternate on the same date was wrongly deleted")
+	}
+	if !sawOtherDate {
+		t.Fatal("same-title alternate on a different date was wrongly deleted")
 	}
 }
 

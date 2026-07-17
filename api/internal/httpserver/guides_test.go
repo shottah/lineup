@@ -34,6 +34,7 @@ type replaceCall struct {
 	userID, guideID int64
 	keepIDs         []int64
 	newItems        []guide.Item
+	seed            int64
 }
 
 // fakeGuides implements GuideStore in memory, recording call args so tests
@@ -153,9 +154,9 @@ func (f *fakeGuides) GuideWithItems(_ context.Context, userID, guideID int64) (*
 	return g, nil
 }
 
-func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item) (*store.Guide, error) {
-	f.replaceArgs = &replaceCall{userID: userID, guideID: guideID, keepIDs: keepIDs, newItems: newItems}
-	g := &store.Guide{ID: guideID, Items: toStoreItems(newItems, 1000)}
+func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*store.Guide, error) {
+	f.replaceArgs = &replaceCall{userID: userID, guideID: guideID, keepIDs: keepIDs, newItems: newItems, seed: seed}
+	g := &store.Guide{ID: guideID, Seed: seed, Items: toStoreItems(newItems, 1000)}
 	f.lastGuide = g
 	return g, nil
 }
@@ -447,6 +448,14 @@ func TestRegenerate(t *testing.T) {
 	}
 	if fg.replaceArgs == nil {
 		t.Fatal("ReplaceUnkeptItems was not called")
+	}
+	// Regenerate must mint a fresh seed (d.Now().UnixNano()) rather than
+	// reusing the guide's original seed (999).
+	if fg.replaceArgs.seed != fixedClock.UnixNano() {
+		t.Fatalf("seed = %d, want %d (fixed clock nanos)", fg.replaceArgs.seed, fixedClock.UnixNano())
+	}
+	if fg.replaceArgs.seed == 999 {
+		t.Fatal("regenerate must not reuse the guide's original seed")
 	}
 	wantKeep := []int64{1, 2, 3, 4}
 	if !reflect.DeepEqual(fg.replaceArgs.keepIDs, wantKeep) {
