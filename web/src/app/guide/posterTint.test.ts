@@ -7,6 +7,8 @@ import {
   hashHue,
   logoPlate,
   meanLuminance,
+  peekLogoPlate,
+  peekPosterHue,
   posterHue,
   rgbToHsl,
   tintFromHue,
@@ -211,6 +213,42 @@ describe("posterHue", () => {
   });
 });
 
+// peekPosterHue: synchronous read of the same cache posterHue populates —
+// zero-flash pattern lets a render read an already-resolved hue without
+// awaiting.
+
+describe("peekPosterHue", () => {
+  it("returns null for a title_id that has never been requested", () => {
+    expect(peekPosterHue(999101)).toBeNull();
+  });
+
+  it("returns null while extraction is still in flight (never observes a pending promise)", async () => {
+    let release!: (hue: number) => void;
+    const pending = new Promise<number>((resolve) => {
+      release = resolve;
+    });
+    const extract = vi.fn().mockReturnValue(pending);
+
+    const inFlight = posterHue(106, "/poster.jpg", extract);
+    expect(peekPosterHue(106)).toBeNull();
+
+    release(88);
+    await inFlight;
+  });
+
+  it("returns the resolved hue once the corresponding posterHue call has completed", async () => {
+    const extract = vi.fn().mockResolvedValue(150);
+    await posterHue(107, "/poster.jpg", extract);
+    expect(peekPosterHue(107)).toBe(150);
+  });
+
+  it("returns the resolved fallback hue once a failed extraction has completed", async () => {
+    const extract = vi.fn().mockRejectedValue(new Error("decode error"));
+    await posterHue(108, "/poster.jpg", extract);
+    expect(peekPosterHue(108)).toBe(hashHue(108));
+  });
+});
+
 describe("logoPlate", () => {
   it("resolves to the sampled plate on success", async () => {
     const sample = vi.fn().mockResolvedValue("plate-dark");
@@ -242,5 +280,40 @@ describe("logoPlate", () => {
     const plate = await logoPlate(204, "", sample);
     expect(plate).toBe("text-fallback");
     expect(sample).not.toHaveBeenCalled();
+  });
+});
+
+// peekLogoPlate: synchronous read of the same cache logoPlate populates —
+// mirrors peekPosterHue's semantics above.
+
+describe("peekLogoPlate", () => {
+  it("returns null for a provider_id that has never been requested", () => {
+    expect(peekLogoPlate(999201)).toBeNull();
+  });
+
+  it("returns null while sampling is still in flight (never observes a pending promise)", async () => {
+    let release!: (plate: "plate-light" | "plate-dark") => void;
+    const pending = new Promise<"plate-light" | "plate-dark">((resolve) => {
+      release = resolve;
+    });
+    const sample = vi.fn().mockReturnValue(pending);
+
+    const inFlight = logoPlate(205, "/netflix.png", sample);
+    expect(peekLogoPlate(205)).toBeNull();
+
+    release("plate-dark");
+    await inFlight;
+  });
+
+  it("returns the resolved plate once the corresponding logoPlate call has completed", async () => {
+    const sample = vi.fn().mockResolvedValue("plate-light");
+    await logoPlate(206, "/apple.png", sample);
+    expect(peekLogoPlate(206)).toBe("plate-light");
+  });
+
+  it("returns the resolved text-fallback once a failed sample has completed", async () => {
+    const sample = vi.fn().mockRejectedValue(new Error("tainted canvas"));
+    await logoPlate(207, "/broken.png", sample);
+    expect(peekLogoPlate(207)).toBe("text-fallback");
   });
 });

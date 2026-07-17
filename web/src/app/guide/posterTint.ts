@@ -260,9 +260,19 @@ export async function posterHue(
   return attempt;
 }
 
+// Synchronous read of the resolved poster hue cache — never triggers
+// extraction and never observes a still-pending `posterHue` call, even if
+// one is in flight for this title_id. Lets a first render read an
+// already-resolved value synchronously (spec's zero-flash pattern:
+// hash-first synchronously, silent canvas upgrade once `posterHue`
+// resolves) instead of always waiting a tick for the async path.
+export function peekPosterHue(titleId: number): number | null {
+  return posterHueCache.get(titleId)?.hue ?? null;
+}
+
 // --- §5.1 cache + orchestration -------------------------------------------
 
-type LogoPlate = "plate-light" | "plate-dark" | "text-fallback";
+export type LogoPlate = "plate-light" | "plate-dark" | "text-fallback";
 
 // Keyed by provider_id per §5.1 step 1 (there are only a handful of
 // distinct providers across any guide, so this is essentially free after
@@ -310,4 +320,11 @@ export async function logoPlate(
 
   logoPlateInFlight.set(providerId, attempt);
   return attempt;
+}
+
+// Synchronous read of the resolved logo plate cache — same semantics as
+// peekPosterHue above: never triggers sampling, never observes a
+// still-pending `logoPlate` call.
+export function peekLogoPlate(providerId: number): LogoPlate | null {
+  return logoPlateCache.get(providerId) ?? null;
 }
