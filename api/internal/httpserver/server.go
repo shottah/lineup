@@ -69,6 +69,7 @@ func New(d Deps) *http.Server {
 					gr.Patch("/items/{itemID}", handlePatchItem(d))
 					gr.Delete("/items/{itemID}", handleDeleteItem(d))
 					gr.Post("/items/{itemID}/watched", handleWatchItem(d))
+					gr.Delete("/items/{itemID}/watched", handleUnwatchItem(d))
 				})
 			}
 		})

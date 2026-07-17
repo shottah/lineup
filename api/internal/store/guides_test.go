@@ -493,6 +493,175 @@ func TestMarkItemWatchedExactPointerAdvance(t *testing.T) {
 	}
 }
 
+// TestUnmarkItemWatched covers the reversal contract: an item's watched
+// flag always clears, but the user_titles pointer/status rollback is
+// conditional on this mark's effects still being the latest.
+func TestUnmarkItemWatched(t *testing.T) {
+	t.Run("round trip restores pointer and status", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s) // S1=2 eps, S2=2 eps; pointer starts 1/1
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			// Season/episode ahead of the pointer's start (1/1) triggers the
+			// advance branch directly and lands on the finale (pastFinale),
+			// so this single mark/unmark exercises the status flip too.
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 2, Episode: 2, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("watch: %v", err)
+		}
+		me := entryOf(t, s, uid, seriesID)
+		if me.Status != "watched" || me.WatchedAt == nil || me.Pointer != (Pointer{Season: 2, Episode: 2}) {
+			t.Fatalf("after watch (finale) = %+v", me)
+		}
+
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("unwatch: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("unwatched item still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, seriesID)
+		if me.Status != "rotation" || me.WatchedAt != nil || me.Pointer != (Pointer{Season: 2, Episode: 2}) {
+			t.Fatalf("after unwatch = %+v, want status=rotation watched_at=nil pointer=2/2", me)
+		}
+	})
+
+	t.Run("pointer moved on since is left untouched", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s) // S1=2 eps, S2=2 eps; pointer starts 1/1
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+			{Date: "2026-01-06", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 2, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil { // -> pointer 1/2
+			t.Fatalf("watch A: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[1].ID); err != nil { // -> pointer 2/1 (rollover)
+			t.Fatalf("watch B: %v", err)
+		}
+		me := entryOf(t, s, uid, seriesID)
+		if me.Pointer != (Pointer{Season: 2, Episode: 1}) {
+			t.Fatalf("pointer before unmark = %+v, want 2/1", me.Pointer)
+		}
+
+		// Unmark A: nextPointer(1,1) = 1/2, which no longer matches the
+		// current pointer (2/1) since B's mark advanced past it, so the
+		// pointer (and status) must be left alone.
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("unmark A: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("unmarked item A still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, seriesID)
+		if me.Pointer != (Pointer{Season: 2, Episode: 1}) {
+			t.Fatalf("pointer after stale unmark = %+v, want untouched 2/1", me.Pointer)
+		}
+		if me.Status != "rotation" {
+			t.Fatalf("status after stale unmark = %q, want rotation", me.Status)
+		}
+	})
+
+	t.Run("movie auto-complete reversal", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, _, movieID := seedGuideWorld(t, s)
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1300, TitleID: movieID, Provider: 902, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("watch movie: %v", err)
+		}
+		me := entryOf(t, s, uid, movieID)
+		if me.Status != "watched" || me.WatchedAt == nil {
+			t.Fatalf("after watch movie = %+v", me)
+		}
+
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("unwatch movie: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("unwatched movie item still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, movieID)
+		if me.Status != "rotation" || me.WatchedAt != nil {
+			t.Fatalf("after unwatch movie = %+v, want status=rotation watched_at=nil", me)
+		}
+	})
+
+	t.Run("idempotent double unmark", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("watch: %v", err)
+		}
+		if _, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("first unmark: %v", err)
+		}
+		me := entryOf(t, s, uid, seriesID)
+		if me.Pointer != (Pointer{Season: 1, Episode: 1}) || me.Status != "rotation" {
+			t.Fatalf("state after first unmark = %+v, want pointer=1/1 status=rotation", me)
+		}
+
+		// Second unmark of an already-unwatched item must be a no-op.
+		it, err := s.UnmarkItemWatched(ctx, uid, g.ID, g.Items[0].ID)
+		if err != nil {
+			t.Fatalf("second unmark: %v", err)
+		}
+		if it.Watched {
+			t.Fatalf("idempotent unmark result still flagged watched: %+v", it)
+		}
+		me = entryOf(t, s, uid, seriesID)
+		if me.Pointer != (Pointer{Season: 1, Episode: 1}) || me.Status != "rotation" {
+			t.Fatalf("state after idempotent unmark = %+v, want unchanged pointer=1/1 status=rotation", me)
+		}
+	})
+
+	t.Run("foreign guide not found", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := s.MarkItemWatched(ctx, uid, g.ID, g.Items[0].ID); err != nil {
+			t.Fatalf("watch: %v", err)
+		}
+		if _, err := s.UnmarkItemWatched(ctx, seedUser(t, s), g.ID, g.Items[0].ID); !errors.Is(err, ErrGuideNotFound) {
+			t.Fatalf("foreign unmark err = %v, want ErrGuideNotFound", err)
+		}
+	})
+}
+
 // TestGuideLookups guards #18: the sidecar dictionaries must resolve every
 // distinct title/provider id referenced by a guide's items, with the right
 // name/kind/tmdb_id (titles) and name/logo_path (providers) — the data the

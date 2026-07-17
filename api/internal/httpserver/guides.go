@@ -27,6 +27,7 @@ type GuideStore interface {
 	UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd store.GuideItemUpdate) (*store.GuideItem, error)
 	DeleteGuideItem(ctx context.Context, userID, guideID, itemID int64) error
 	MarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
+	UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
 	SwapTitle(ctx context.Context, userID, titleID int64, region string) (*store.SwapInfo, error)
 	GuideLookups(ctx context.Context, guideID int64) (map[int64]store.TitleLookup, map[int64]store.ProviderRow, error)
 }
@@ -327,6 +328,29 @@ func handleWatchItem(d Deps) http.HandlerFunc {
 		}
 		u := userFrom(r.Context())
 		it, err := d.Guides.MarkItemWatched(r.Context(), u.ID, gid, itemID)
+		switch {
+		case errors.Is(err, store.ErrGuideNotFound):
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		case err != nil:
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(it)
+	}
+}
+
+func handleUnwatchItem(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gid, ok1 := pathID(r, "id")
+		itemID, ok2 := pathID(r, "itemID")
+		if !ok1 || !ok2 {
+			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		}
+		u := userFrom(r.Context())
+		it, err := d.Guides.UnmarkItemWatched(r.Context(), u.ID, gid, itemID)
 		switch {
 		case errors.Is(err, store.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")

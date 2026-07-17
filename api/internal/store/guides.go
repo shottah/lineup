@@ -483,6 +483,108 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 	return it, nil
 }
 
+// UnmarkItemWatched reverses MarkItemWatched conditionally: it mirrors the
+// pointer/status writes MarkItemWatched made, but only where nothing has
+// happened since that would make undoing them wrong. guide_items.watched
+// always clears — unwatching an already-unwatched item is a no-op beyond
+// that (idempotent). For a series, the user_titles pointer rolls back to
+// (item.season, item.episode) only if it's still sitting exactly where this
+// item's mark left it (nextPointer(item.season, item.episode) — a later
+// mark that advanced the pointer further leaves it untouched), and status
+// reverts from 'watched' to 'rotation' (clearing watched_at) alongside that
+// same check. For a movie (pointer irrelevant), status reverts whenever
+// it's still 'watched'.
+func (s *Store) UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*GuideItem, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var titleID int64
+	var season, episode int
+	var kind string
+	var watched bool
+	err = tx.QueryRow(ctx, `
+SELECT gi.title_id, gi.season, gi.episode, t.kind, gi.watched
+FROM guide_items gi JOIN guides g ON g.id = gi.guide_id JOIN titles t ON t.id = gi.title_id
+WHERE gi.id = $3 AND gi.guide_id = $2 AND g.user_id = $1
+FOR UPDATE OF gi`, userID, guideID, itemID).Scan(&titleID, &season, &episode, &kind, &watched)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrGuideNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: load: %w", err)
+	}
+
+	if watched {
+		if _, err := tx.Exec(ctx, `UPDATE guide_items SET watched = false WHERE id = $1`, itemID); err != nil {
+			return nil, fmt.Errorf("store: unwatch item: flag: %w", err)
+		}
+
+		if kind == "movie" {
+			if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET status = 'rotation', watched_at = NULL
+WHERE user_id = $1 AND title_id = $2 AND status = 'watched'`, userID, titleID); err != nil {
+				return nil, fmt.Errorf("store: unwatch item: movie revert: %w", err)
+			}
+		} else {
+			var ps, pe int
+			err = tx.QueryRow(ctx, `
+SELECT pointer_season, pointer_episode FROM user_titles
+WHERE user_id = $1 AND title_id = $2 FOR UPDATE`, userID, titleID).Scan(&ps, &pe)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("store: unwatch item: pointer: %w", err)
+			}
+			if err == nil {
+				counts := map[int]int{}
+				crows, cerr := tx.Query(ctx, `SELECT season_number, episode_count FROM title_seasons WHERE title_id = $1`, titleID)
+				if cerr != nil {
+					return nil, fmt.Errorf("store: unwatch item: seasons: %w", cerr)
+				}
+				for crows.Next() {
+					var sn, ec int
+					if cerr := crows.Scan(&sn, &ec); cerr != nil {
+						crows.Close()
+						return nil, fmt.Errorf("store: unwatch item: seasons scan: %w", cerr)
+					}
+					counts[sn] = ec
+				}
+				crows.Close()
+				if cerr := crows.Err(); cerr != nil {
+					return nil, fmt.Errorf("store: unwatch item: seasons rows: %w", cerr)
+				}
+
+				// next is what MarkItemWatched would have set the pointer to
+				// for this item (parked on the item itself past the finale).
+				// If the pointer is still exactly there, this mark's advance
+				// is still the latest and gets undone; a later mark that
+				// pushed the pointer further leaves it alone.
+				next, _ := nextPointer(season, episode, counts)
+				if next.Season == ps && next.Episode == pe {
+					if _, err := tx.Exec(ctx, `
+UPDATE user_titles SET
+  pointer_season = $3, pointer_episode = $4,
+  status = CASE WHEN status = 'watched' THEN 'rotation' ELSE status END,
+  watched_at = CASE WHEN status = 'watched' THEN NULL ELSE watched_at END
+WHERE user_id = $1 AND title_id = $2`, userID, titleID, season, episode); err != nil {
+						return nil, fmt.Errorf("store: unwatch item: revert: %w", err)
+					}
+				}
+			}
+		}
+	}
+
+	it, err := scanGuideItem(tx.QueryRow(ctx, `SELECT `+guideItemCols+` FROM guide_items gi WHERE gi.id = $1`, itemID))
+	if err != nil {
+		return nil, fmt.Errorf("store: unwatch item: reload: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: unwatch item: commit: %w", err)
+	}
+	return it, nil
+}
+
 // TitleLookup is the guide sidecar's per-title rendering data (#18).
 type TitleLookup struct {
 	Name       string `json:"name"`
