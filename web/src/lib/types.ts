@@ -117,6 +117,7 @@ export type GuideTitleLookup = {
   name: string;
   kind: "movie" | "series";
   tmdb_id: number;
+  poster_path: string;
 };
 
 export type GuideResponse = {

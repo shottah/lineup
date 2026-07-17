@@ -485,9 +485,10 @@ WHERE user_id = $1 AND title_id = $2`, userID, titleID, next.Season, next.Episod
 
 // TitleLookup is the guide sidecar's per-title rendering data (#18).
 type TitleLookup struct {
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`
-	TMDBID int64  `json:"tmdb_id"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	TMDBID     int64  `json:"tmdb_id"`
+	PosterPath string `json:"poster_path"`
 }
 
 // GuideLookups returns rendering dictionaries for a guide's items: every
@@ -496,7 +497,7 @@ type TitleLookup struct {
 func (s *Store) GuideLookups(ctx context.Context, guideID int64) (map[int64]TitleLookup, map[int64]ProviderRow, error) {
 	titles := map[int64]TitleLookup{}
 	rows, err := s.Pool.Query(ctx, `
-SELECT DISTINCT t.id, t.name, t.kind, t.tmdb_id
+SELECT DISTINCT t.id, t.name, t.kind, t.tmdb_id, t.poster_path
 FROM guide_items gi JOIN titles t ON t.id = gi.title_id
 WHERE gi.guide_id = $1`, guideID)
 	if err != nil {
@@ -506,7 +507,7 @@ WHERE gi.guide_id = $1`, guideID)
 	for rows.Next() {
 		var id int64
 		var tl TitleLookup
-		if err := rows.Scan(&id, &tl.Name, &tl.Kind, &tl.TMDBID); err != nil {
+		if err := rows.Scan(&id, &tl.Name, &tl.Kind, &tl.TMDBID, &tl.PosterPath); err != nil {
 			return nil, nil, fmt.Errorf("store: guide lookups: titles scan: %w", err)
 		}
 		titles[id] = tl
