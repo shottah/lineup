@@ -256,7 +256,8 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 
 		u := userFrom(r.Context())
 		upd := store.GuideItemUpdate{Date: body.Date, StartMin: body.StartMin, Pinned: body.Pinned,
-			SetEdited: body.Date != nil || body.StartMin != nil || body.TitleID != nil}
+			SetEdited: body.Date != nil || body.StartMin != nil || body.TitleID != nil,
+			Today:     d.Now().UTC().Format(dateFmt)}
 
 		if body.TitleID != nil {
 			info, err := d.Guides.SwapTitle(r.Context(), u.ID, *body.TitleID, u.Region)
@@ -286,6 +287,12 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 		switch {
 		case errors.Is(err, store.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
+			return
+		case errors.Is(err, store.ErrPastMove):
+			writeJSONError(w, http.StatusUnprocessableEntity, "cannot move past slot")
+			return
+		case errors.Is(err, store.ErrPastTarget):
+			writeJSONError(w, http.StatusUnprocessableEntity, "cannot move into the past")
 			return
 		case err != nil:
 			writeJSONError(w, http.StatusInternalServerError, "internal")

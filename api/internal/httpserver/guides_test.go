@@ -57,6 +57,7 @@ type fakeGuides struct {
 	items      map[int64]itemOwner
 	itemStore  map[int64]*store.GuideItem
 	updateArgs *store.GuideItemUpdate
+	updateErr  error // when set, UpdateGuideItem returns this instead of applying the update
 
 	swapInfo map[int64]*store.SwapInfo
 
@@ -184,6 +185,9 @@ func (f *fakeGuides) UpdateGuideItem(_ context.Context, userID, guideID, itemID 
 		return nil, store.ErrGuideNotFound
 	}
 	f.updateArgs = &upd
+	if f.updateErr != nil {
+		return nil, f.updateErr
+	}
 	it := f.itemStore[itemID]
 	if upd.Date != nil {
 		it.Date = *upd.Date
@@ -653,6 +657,22 @@ func TestPatchItem(t *testing.T) {
 		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"title_id":999}`)
 		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "invalid title") {
 			t.Fatalf("swap rejected = %d body %s, want 422 invalid title", rec.Code, rec.Body.String())
+		}
+	})
+
+	// TestUpdateGuideItemPastMove (store package) covers the actual
+	// enforcement; here we only assert the handler maps store.ErrPastMove
+	// to a 422 with the documented error body.
+	t.Run("past move rejected", func(t *testing.T) {
+		fg := newItemGuide()
+		fg.updateErr = store.ErrPastMove
+		h := guidesServer(t, fg)
+		rec := do(t, h, http.MethodPatch, "/v1/guides/1/items/1", "tok-1", `{"start_min":120}`)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("past move = %d, want 422 (body %s)", rec.Code, rec.Body.String())
+		}
+		if rec.Body.String() != `{"error":"cannot move past slot"}` {
+			t.Fatalf("past move body = %q, want %q", rec.Body.String(), `{"error":"cannot move past slot"}`)
 		}
 	})
 

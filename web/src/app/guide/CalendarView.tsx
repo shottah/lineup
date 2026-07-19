@@ -1,149 +1,150 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { epLabel, toCalendarColumns, type CalendarSlot } from "@/lib/guide";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+
+import { monthDay, snap15, toTimeGrid } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
-import { ItemMenu } from "./ItemMenu";
-import { ProviderChip } from "./ProviderChip";
-import { SlotQuickActions } from "./SlotQuickActions";
-import { usePosterHue } from "./usePosterHue";
+import { DayColumn } from "./DayColumn";
+import { TimeGutter } from "./TimeGutter";
+import { useGuideItemDrag } from "./useGuideItemDrag";
 
-// The 7-column calendar: desktop grid, below-lg a horizontal snap-scroll
-// row. Owns the "one ItemMenu open at a time" state — keyed by
-// `${date}-${itemId}` so the same item id on two different columns (can't
-// happen today, but the key stays date-qualified for safety) never
-// collides.
+// Time-grid vertical scale (design spec §1): "fill the viewport, floor at
+// 66vh, then scroll" lives entirely in these constants plus the
+// --hour-px CSS expression below — no JS measurement/ResizeObserver.
+const HEADER_OFFSET = 160;
+const MIN_HOUR_PX = 56;
+const MIN_ITEM_PX = 22;
+
+// The portion of the viewport available to the grid below the page
+// header: shared by --hour-px's numerator and the scroll container's own
+// max-height, so "fill the available space, then scroll" is one formula
+// rather than two that could drift apart.
+const AVAILABLE_H = `max(100dvh - ${HEADER_OFFSET}px, 66dvh)`;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+// The Calendar tab: one shared time axis (TimeGutter) plus 7 day columns,
+// each item absolutely positioned by start time/duration (toTimeGrid).
+// Desktop lg+ renders gutter + a 7-column grid; below lg the day columns
+// horizontal snap-scroll with the gutter sticky-left. Owns the DndContext
+// (design spec §3): drag delta/day drop resolve to a move mutation here,
+// while --hour-px stays CSS-driven for layout — resolvedHourPx below is a
+// JS-side mirror of that same formula used only for the drag math. Also
+// owns the "one ItemMenu open at a time" state, same as the pre-grid
+// CalendarView, keyed by `${date}-${itemId}`.
 export function CalendarView({ guide, today }: { guide: GuideResponse; today: string }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const columns = toCalendarColumns(guide, today);
-  const dateOptions = columns.map((c) => ({ date: c.date, dow: c.dow }));
+  const grid = toTimeGrid(guide, today);
+  const columns = grid.days.map((d) => ({ date: d.date, dow: d.dow }));
 
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-2 snap-x lg:overflow-visible lg:grid lg:grid-cols-7">
-      {columns.map((col) => (
-        <div key={col.date} className="flex min-w-[160px] lg:min-w-0 flex-col gap-1.5 snap-start">
-          <div className="px-1 pt-1 pb-2 text-center">
-            <div
-              className={`text-[11px] font-semibold tracking-[0.1em] ${
-                col.isToday ? "text-acc" : "text-ink"
-              }`}
-            >
-              {col.dow}
+  const dragM = useGuideItemDrag({ guideId: guide.id });
+
+  // Mirrors the --hour-px CSS formula in JS (design spec §3) so the drag's
+  // vertical pixel delta can be converted to minutes; CSS remains the
+  // single source of truth for actual layout. Recomputed on resize and
+  // whenever the window's hour count changes (e.g. after a regenerate).
+  const hourPxRef = useRef(MIN_HOUR_PX);
+  useEffect(() => {
+    if (grid.windowHours === 0) return;
+    const updateHourPx = () => {
+      hourPxRef.current = Math.max(
+        Math.max(window.innerHeight - HEADER_OFFSET, window.innerHeight * 0.66) / grid.windowHours,
+        MIN_HOUR_PX,
+      );
+    };
+    updateHourPx();
+    window.addEventListener("resize", updateHourPx);
+    return () => window.removeEventListener("resize", updateHourPx);
+  }, [grid.windowHours]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over, delta } = event;
+    const itemId = Number(active.id);
+    const item = guide.items.find((it) => it.id === itemId);
+    if (!item) return;
+
+    const duration = item.end_min - item.start_min;
+    const deltaMinutes = Math.round((delta.y / hourPxRef.current) * 60);
+    const newStart = clamp(snap15(item.start_min + deltaMinutes), grid.windowStart, grid.windowEnd - duration);
+    const newDate = over ? String(over.id) : item.date;
+
+    // Same date, same start — a no-op drag (or the click that opens
+    // ItemMenu, which never reaches here past the activation distance
+    // anyway): don't fire the mutation.
+    if (newDate === item.date && newStart === item.start_min) return;
+
+    dragM.mutate({ itemId, date: newDate, startMin: newStart });
+  }
+
+  if (grid.windowHours === 0) {
+    return (
+      <div className="flex gap-2 overflow-x-auto pb-2 snap-x lg:overflow-visible lg:grid lg:grid-cols-7">
+        {grid.days.map((day) => (
+          <div key={day.date} className="flex min-w-[160px] flex-col gap-1.5 snap-start lg:min-w-0">
+            <div className="px-1 pt-1 pb-2 text-center">
+              <div className={`text-[11px] font-semibold tracking-[0.1em] ${day.isToday ? "text-acc" : "text-ink"}`}>
+                {day.dow}
+              </div>
+              <div className={`text-[10.5px] ${day.isToday ? "text-acc" : "text-faint"}`}>
+                {day.isToday ? "Tonight" : monthDay(day.date)}
+              </div>
             </div>
-            <div className={`text-[10.5px] ${col.isToday ? "text-acc" : "text-faint"}`}>{col.sub}</div>
-          </div>
-
-          {col.slots.map((slot) => {
-            const key = `${col.date}-${slot.item.id}`;
-            return (
-              <CalendarSlotCard
-                key={key}
-                guide={guide}
-                slot={slot}
-                columnDate={col.date}
-                columnDow={col.dow}
-                dateOptions={dateOptions}
-                open={openKey === key}
-                onToggleOpen={() => setOpenKey(openKey === key ? null : key)}
-                onClose={() => setOpenKey(null)}
-              />
-            );
-          })}
-
-          {col.slots.length === 0 && (
             <div className="rounded-xl border border-dashed border-line px-2.5 py-5 text-center text-[11.5px] font-medium text-faint">
               Night off
             </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
-// Poster-tinted card (docs/design/guide-card-redesign.md §1–§4): a
-// dedicated component (not inlined in the .map() above) because
-// usePosterHue is a hook and each slot needs its own independent hook
-// call — inlining it in the loop body would call hooks a variable number
-// of times per render, which breaks the Rules of Hooks.
-function CalendarSlotCard({
-  guide,
-  slot,
-  columnDate,
-  columnDow,
-  dateOptions,
-  open,
-  onToggleOpen,
-  onClose,
-}: {
-  guide: GuideResponse;
-  slot: CalendarSlot;
-  columnDate: string;
-  columnDow: string;
-  dateOptions: { date: string; dow: string }[];
-  open: boolean;
-  onToggleOpen: () => void;
-  onClose: () => void;
-}) {
-  const hue = usePosterHue(slot.item.title_id, slot.title.poster_path);
-  const watched = slot.item.watched;
-  const provider = guide.providers[String(slot.item.provider_id)];
-  const [timeNumber, meridiem] = slot.timeLabel.split(" ");
+  const gridStyle = {
+    "--hours": grid.windowHours,
+    "--hour-px": `max(calc(${AVAILABLE_H} / var(--hours)), ${MIN_HOUR_PX}px)`,
+    "--win-start": grid.windowStart,
+    maxHeight: AVAILABLE_H,
+    overflowY: "auto",
+  } as CSSProperties;
 
   return (
-    <div
-      className={`guide-card group relative rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,transform,opacity] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}`}
-      style={{ "--th": hue } as CSSProperties}
-    >
-      <button
-        type="button"
-        onClick={onToggleOpen}
-        className="block w-full rounded-xl px-3 pt-[11px] pb-3 text-left text-ink"
+    <DndContext sensors={sensors} modifiers={[restrictToWindowEdges]} onDragEnd={handleDragEnd}>
+      <div
+        className="flex gap-0 overflow-x-auto pb-2 snap-x lg:grid lg:grid-cols-[auto_repeat(7,minmax(0,1fr))] lg:gap-2"
+        style={gridStyle}
       >
-        <div className="mt-0 inline-flex items-center gap-[3px] rounded-full border border-line bg-panel2/70 px-2 py-[3px]">
-          <span className="text-[10px] font-semibold tabular-nums text-mut">{timeNumber}</span>
-          <span className="text-[8.5px] font-medium text-faint">{meridiem}</span>
-        </div>
-        <div className="mt-[3px] text-[13.5px] leading-[1.25] font-semibold">
-          {watched ? "✓ " : ""}
-          {slot.title.name}
-        </div>
-        <div className="mt-[3px] flex items-center gap-1 text-[10.5px] text-mut">
-          <span>{epLabel(slot.title, slot.item)}</span>
-          {slot.providerName && (
-            <>
-              <span aria-hidden="true">·</span>
-              <ProviderChip
-                variant="inline"
-                providerId={slot.item.provider_id}
-                logoPath={provider?.logo_path ?? ""}
-                providerName={slot.providerName}
-              />
-            </>
-          )}
-        </div>
-        {slot.item.pinned && (
-          <span className="mt-1.5 inline-block rounded-full bg-acc-soft px-2 py-0.5 text-[9.5px] font-medium text-acc">
-            Pinned
-          </span>
-        )}
-      </button>
-      {!open && (
-        <SlotQuickActions guideId={guide.id} item={slot.item} title={slot.title} columnDow={columnDow} />
-      )}
-      {open && (
-        <ItemMenu
-          guideId={guide.id}
-          item={slot.item}
-          title={slot.title}
-          columnDate={columnDate}
-          columnDow={columnDow}
-          columns={dateOptions}
-          onClose={onClose}
-        />
-      )}
-    </div>
+        <TimeGutter windowStart={grid.windowStart} windowEnd={grid.windowEnd} />
+        {grid.days.map((day) => (
+          <DayColumn
+            key={day.date}
+            guide={guide}
+            day={day}
+            hourCount={grid.windowHours}
+            columns={columns}
+            minItemPx={MIN_ITEM_PX}
+            openKey={openKey}
+            onToggleOpen={(key) => setOpenKey((cur) => (cur === key ? null : key))}
+            onClose={() => setOpenKey(null)}
+          />
+        ))}
+      </div>
+    </DndContext>
   );
 }

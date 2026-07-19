@@ -14,6 +14,11 @@ import (
 // to another user (indistinguishable by design).
 var ErrGuideNotFound = errors.New("store: guide not found")
 
+// ErrPastMove is returned when the moved item's current date is already in
+// the past; ErrPastTarget when the requested target date is in the past.
+var ErrPastMove = errors.New("store: cannot move a past slot")
+var ErrPastTarget = errors.New("store: cannot move a slot into the past")
+
 // TMDB omits runtimes for many current shows; a zero-duration item would
 // let the scheduler stack everything at the window start. Assume a
 // typical episode/feature length instead.
@@ -21,6 +26,22 @@ const (
 	defaultSeriesRuntimeMin = 45
 	defaultMovieRuntimeMin  = 120
 )
+
+// defaultRuntime applies the fallback runtime for a title whose stored
+// runtime_minutes is 0 (TMDB omits episode_run_time for many current shows).
+// Both the generation path (GuideInputTitles) and the swap path (SwapTitle)
+// route through this so a swapped-in back-catalog title gets the same
+// duration a generated one would, instead of collapsing to a zero-length
+// slot (end_min == start_min).
+func defaultRuntime(kind string, raw int) int {
+	if raw != 0 {
+		return raw
+	}
+	if kind == "movie" {
+		return defaultMovieRuntimeMin
+	}
+	return defaultSeriesRuntimeMin
+}
 
 // Guide mirrors a guides row plus its items.
 type Guide struct {
@@ -59,6 +80,9 @@ type GuideItemUpdate struct {
 	Episode     *int
 	Pinned      *bool
 	SetEdited   bool
+	// Today (YYYY-MM-DD, UTC) gates move enforcement; empty disables it.
+	// Only consulted when the update is a move (Date or StartMin set).
+	Today string
 	// SwapProviders is the new title's region-filtered provider ids
 	// (SwapInfo.Providers, sorted ascending), set only on a title swap.
 	// UpdateGuideItem keeps the item's current provider when it's among
@@ -129,13 +153,7 @@ ORDER BY t.id`, userID)
 		if err := rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Runtime, &t.Airing, &t.Pointer.Season, &t.Pointer.Episode); err != nil {
 			return nil, fmt.Errorf("store: guide input titles: scan: %w", err)
 		}
-		if t.Runtime == 0 {
-			if t.Kind == "movie" {
-				t.Runtime = defaultMovieRuntimeMin
-			} else {
-				t.Runtime = defaultSeriesRuntimeMin
-			}
-		}
+		t.Runtime = defaultRuntime(t.Kind, t.Runtime)
 		t.SeasonEpisodes = map[int]int{}
 		idx[t.ID] = len(titles)
 		ids = append(ids, t.ID)
@@ -364,6 +382,27 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int
 		return nil, fmt.Errorf("store: update guide item: begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if (upd.Date != nil || upd.StartMin != nil) && upd.Today != "" {
+		var currentDate string
+		err := tx.QueryRow(ctx, `
+SELECT to_char(gi.date, 'YYYY-MM-DD') FROM guide_items gi
+JOIN guides g ON g.id = gi.guide_id
+WHERE gi.id = $3 AND gi.guide_id = $2 AND g.user_id = $1
+FOR UPDATE OF gi`, userID, guideID, itemID).Scan(&currentDate)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrGuideNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("store: update guide item: load date: %w", err)
+		}
+		if currentDate < upd.Today {
+			return nil, ErrPastMove
+		}
+		if upd.Date != nil && *upd.Date < upd.Today {
+			return nil, ErrPastTarget
+		}
+	}
 
 	q := `
 UPDATE guide_items gi SET
@@ -699,6 +738,9 @@ WHERE ut.user_id = $1 AND ut.title_id = $2 AND ut.status IN ('rotation','watchli
 	if err != nil {
 		return nil, fmt.Errorf("store: swap title: %w", err)
 	}
+	// Same fallback the generation path applies — a back-catalog title with
+	// no TMDB runtime must swap in at a sane duration, not collapse the slot.
+	info.Runtime = defaultRuntime(info.Kind, info.Runtime)
 
 	// Region-filtered providers for the swap target, sorted ascending.
 	// Empty (not nil) when the title hasn't been through provider
