@@ -368,6 +368,45 @@ func TestSwapTitle(t *testing.T) {
 	}
 }
 
+// TestSwapTitleAppliesRuntimeDefault covers the mirror of
+// TestGuideInputTitlesDefaultRuntime for the swap path: a back-catalog title
+// whose TMDB runtime is 0 must swap in at the same 45/120 default the
+// generation engine uses, not at 0 — else UpdateGuideItem sets
+// end_min = start_min + 0 and the item collapses to a zero-length slot.
+func TestSwapTitleAppliesRuntimeDefault(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := seedUser(t, s)
+	seriesID := seedTitle(t, s, "Zero RT Swap Series")
+	movieID := seedTitle(t, s, "Zero RT Swap Movie")
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET runtime_minutes=0 WHERE id=$1`, seriesID); err != nil {
+		t.Fatalf("seed series: %v", err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE titles SET kind='movie', runtime_minutes=0 WHERE id=$1`, movieID); err != nil {
+		t.Fatalf("seed movie: %v", err)
+	}
+	for _, tid := range []int64{seriesID, movieID} {
+		if _, err := s.UpsertEntry(ctx, uid, tid, EntryUpdate{Status: strp("rotation")}); err != nil {
+			t.Fatalf("seed rotation: %v", err)
+		}
+	}
+
+	ser, err := s.SwapTitle(ctx, uid, seriesID, "US")
+	if err != nil {
+		t.Fatalf("series swap: %v", err)
+	}
+	if ser.Runtime != defaultSeriesRuntimeMin {
+		t.Fatalf("series swap runtime = %d, want %d", ser.Runtime, defaultSeriesRuntimeMin)
+	}
+	mov, err := s.SwapTitle(ctx, uid, movieID, "US")
+	if err != nil {
+		t.Fatalf("movie swap: %v", err)
+	}
+	if mov.Runtime != defaultMovieRuntimeMin {
+		t.Fatalf("movie swap runtime = %d, want %d", mov.Runtime, defaultMovieRuntimeMin)
+	}
+}
+
 // TestUpdateGuideItemSwapProvider ports the final-review probe reproducing
 // the swap-provider-staleness bug: a swap must recompute provider_id from
 // the new title's region providers rather than leaving the old title's

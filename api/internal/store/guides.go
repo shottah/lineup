@@ -27,6 +27,22 @@ const (
 	defaultMovieRuntimeMin  = 120
 )
 
+// defaultRuntime applies the fallback runtime for a title whose stored
+// runtime_minutes is 0 (TMDB omits episode_run_time for many current shows).
+// Both the generation path (GuideInputTitles) and the swap path (SwapTitle)
+// route through this so a swapped-in back-catalog title gets the same
+// duration a generated one would, instead of collapsing to a zero-length
+// slot (end_min == start_min).
+func defaultRuntime(kind string, raw int) int {
+	if raw != 0 {
+		return raw
+	}
+	if kind == "movie" {
+		return defaultMovieRuntimeMin
+	}
+	return defaultSeriesRuntimeMin
+}
+
 // Guide mirrors a guides row plus its items.
 type Guide struct {
 	ID        int64       `json:"id"`
@@ -137,13 +153,7 @@ ORDER BY t.id`, userID)
 		if err := rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Runtime, &t.Airing, &t.Pointer.Season, &t.Pointer.Episode); err != nil {
 			return nil, fmt.Errorf("store: guide input titles: scan: %w", err)
 		}
-		if t.Runtime == 0 {
-			if t.Kind == "movie" {
-				t.Runtime = defaultMovieRuntimeMin
-			} else {
-				t.Runtime = defaultSeriesRuntimeMin
-			}
-		}
+		t.Runtime = defaultRuntime(t.Kind, t.Runtime)
 		t.SeasonEpisodes = map[int]int{}
 		idx[t.ID] = len(titles)
 		ids = append(ids, t.ID)
@@ -728,6 +738,9 @@ WHERE ut.user_id = $1 AND ut.title_id = $2 AND ut.status IN ('rotation','watchli
 	if err != nil {
 		return nil, fmt.Errorf("store: swap title: %w", err)
 	}
+	// Same fallback the generation path applies — a back-catalog title with
+	// no TMDB runtime must swap in at a sane duration, not collapse the slot.
+	info.Runtime = defaultRuntime(info.Kind, info.Runtime)
 
 	// Region-filtered providers for the swap target, sorted ascending.
 	// Empty (not nil) when the title hasn't been through provider
