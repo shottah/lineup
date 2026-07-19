@@ -209,6 +209,36 @@ describe("layoutDayColumns", () => {
     ]);
     expect(out.find((o) => o.item.id === 3)!.colCount).toBe(1);
   });
+
+  it("gives three mutually-overlapping items colCount 3", () => {
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 0, end_min: 90 }),
+      gi({ id: 2, start_min: 30, end_min: 120 }),
+      gi({ id: 3, start_min: 60, end_min: 150 }),
+    ]);
+    expect(out.map((o) => o.colCount)).toEqual([3, 3, 3]);
+    expect(out.map((o) => o.colIndex).sort()).toEqual([0, 1, 2]);
+  });
+
+  it("keeps a non-transitive chain (A-B, B-C, not A-C) as one cluster at peak concurrency 2", () => {
+    // A[0-60] overlaps B[45-105]; B overlaps C[90-150]; A and C do not overlap.
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 0, end_min: 60 }),
+      gi({ id: 2, start_min: 45, end_min: 105 }),
+      gi({ id: 3, start_min: 90, end_min: 150 }),
+    ]);
+    expect(out.every((o) => o.colCount === 2)).toBe(true); // peak concurrency 2, not 3
+    expect(out.find((o) => o.item.id === 3)!.colIndex).toBe(0); // reuses A's vacated column
+  });
+
+  it("splits a chain of touching-edge items into isolated single columns", () => {
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 0, end_min: 60 }),
+      gi({ id: 2, start_min: 60, end_min: 120 }),
+      gi({ id: 3, start_min: 120, end_min: 180 }),
+    ]);
+    expect(out.every((o) => o.colCount === 1 && o.colIndex === 0)).toBe(true);
+  });
 });
 
 describe("toTimeGrid", () => {
