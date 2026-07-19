@@ -1026,6 +1026,30 @@ func TestUpdateGuideItemPastMove(t *testing.T) {
 	})
 }
 
+// TestUpdateGuideItemMoveNotFound covers the enforcement pre-check's
+// not-found path: calling UpdateGuideItem as a move (Date or StartMin set,
+// Today set) for an itemID that doesn't exist (or belongs to another user,
+// indistinguishable by design) must return ErrGuideNotFound from the
+// enforcement SELECT itself, not a panic or a bare scan error.
+func TestUpdateGuideItemMoveNotFound(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid, seriesID, _ := seedGuideWorld(t, s)
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 1, []guide.Item{
+		{Date: "2026-01-10", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	const missingItemID = 987654321
+	ns := 100
+	_, err = s.UpdateGuideItem(ctx, uid, g.ID, missingItemID, GuideItemUpdate{StartMin: &ns, Today: "2026-01-08"})
+	if !errors.Is(err, ErrGuideNotFound) {
+		t.Fatalf("err = %v, want ErrGuideNotFound", err)
+	}
+}
+
 // TestGuideLookups guards #18: the sidecar dictionaries must resolve every
 // distinct title/provider id referenced by a guide's items, with the right
 // name/kind/tmdb_id (titles) and name/logo_path (providers) — the data the

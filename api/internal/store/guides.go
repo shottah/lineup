@@ -376,7 +376,7 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int
 	if (upd.Date != nil || upd.StartMin != nil) && upd.Today != "" {
 		var currentDate string
 		err := tx.QueryRow(ctx, `
-SELECT gi.date::text FROM guide_items gi
+SELECT to_char(gi.date, 'YYYY-MM-DD') FROM guide_items gi
 JOIN guides g ON g.id = gi.guide_id
 WHERE gi.id = $3 AND gi.guide_id = $2 AND g.user_id = $1
 FOR UPDATE OF gi`, userID, guideID, itemID).Scan(&currentDate)
