@@ -175,3 +175,112 @@ export function toBoardRows(g: GuideResponse, date: string): BoardDay {
     path: plan.map((it) => titleOf(g, it).name),
   };
 }
+
+export function snap15(minutes: number): number {
+  return Math.round(minutes / 15) * 15;
+}
+
+export type LaidOutItem = { item: GuideItem; colIndex: number; colCount: number };
+
+// Side-by-side column packing (spec §2). Items are grouped into clusters of
+// transitively-overlapping intervals; within a cluster each item takes the
+// first column whose previous item has ended (touching edges do NOT overlap).
+export function layoutDayColumns(items: GuideItem[]): LaidOutItem[] {
+  const sorted = items
+    .slice()
+    .sort(
+      (a, b) =>
+        a.start_min - b.start_min ||
+        b.end_min - b.start_min - (a.end_min - a.start_min) ||
+        a.id - b.id,
+    );
+  const out: LaidOutItem[] = [];
+  let cluster: GuideItem[] = [];
+  let clusterMaxEnd = -Infinity;
+
+  const flush = () => {
+    const colEnds: number[] = []; // last end_min per open column
+    const placed = cluster.map((it) => {
+      let col = colEnds.findIndex((end) => end <= it.start_min);
+      if (col === -1) {
+        col = colEnds.length;
+        colEnds.push(it.end_min);
+      } else {
+        colEnds[col] = it.end_min;
+      }
+      return { item: it, colIndex: col };
+    });
+    for (const p of placed) out.push({ ...p, colCount: colEnds.length });
+    cluster = [];
+    clusterMaxEnd = -Infinity;
+  };
+
+  for (const it of sorted) {
+    if (cluster.length > 0 && it.start_min >= clusterMaxEnd) flush();
+    cluster.push(it);
+    clusterMaxEnd = Math.max(clusterMaxEnd, it.end_min);
+  }
+  if (cluster.length > 0) flush();
+  return out;
+}
+
+export type TimeGridItem = {
+  item: GuideItem;
+  title: GuideTitleLookup;
+  providerName: string;
+  topFactor: number; // (start_min - windowStart) / 60
+  spanFactor: number; // (end_min - start_min) / 60
+  colIndex: number;
+  colCount: number;
+};
+
+export type TimeGridDay = {
+  date: string;
+  dow: string;
+  isToday: boolean;
+  isPast: boolean;
+  items: TimeGridItem[];
+};
+
+export type TimeGrid = {
+  windowStart: number;
+  windowEnd: number;
+  windowHours: number;
+  days: TimeGridDay[];
+};
+
+// Time-grid view model (spec §1): a single shared time window across the week
+// (union of PLAN item spans, floored/ceiled to the hour) plus per-day laid-out
+// items carrying positioning factors and overlap columns.
+export function toTimeGrid(g: GuideResponse, today: string): TimeGrid {
+  const planByDate = new Map<string, GuideItem[]>();
+  let minStart = Infinity;
+  let maxEnd = -Infinity;
+  for (const item of g.items) {
+    if (!item.is_plan) continue;
+    minStart = Math.min(minStart, item.start_min);
+    maxEnd = Math.max(maxEnd, item.end_min);
+    const list = planByDate.get(item.date) ?? [];
+    list.push(item);
+    planByDate.set(item.date, list);
+  }
+  const hasItems = minStart !== Infinity;
+  const windowStart = hasItems ? Math.floor(minStart / 60) * 60 : 0;
+  const windowEnd = hasItems ? Math.ceil(maxEnd / 60) * 60 : 0;
+  const windowHours = hasItems ? (windowEnd - windowStart) / 60 : 0;
+
+  const days = eachDate(g.start_date, g.end_date).map((date) => {
+    const d = utc(date);
+    const items = layoutDayColumns(planByDate.get(date) ?? []).map(({ item, colIndex, colCount }) => ({
+      item,
+      title: titleOf(g, item),
+      providerName: providerNameOf(g, item),
+      topFactor: (item.start_min - windowStart) / 60,
+      spanFactor: (item.end_min - item.start_min) / 60,
+      colIndex,
+      colCount,
+    }));
+    return { date, dow: DOW[d.getUTCDay()], isToday: date === today, isPast: date < today, items };
+  });
+  return { windowStart, windowEnd, windowHours, days };
+}

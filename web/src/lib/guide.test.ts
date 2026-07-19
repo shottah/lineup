@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { GuideItem, GuideResponse, GuideTitleLookup } from "./types";
-import { epLabel, fmtTime, monthDay, toBoardRows, toCalendarColumns } from "./guide";
+import {
+  epLabel,
+  fmtTime,
+  layoutDayColumns,
+  monthDay,
+  snap15,
+  toBoardRows,
+  toCalendarColumns,
+  toTimeGrid,
+} from "./guide";
 
 // Two-day fixture: day 1 has a movie plan (20:00 on provider 8), a
 // watched+pinned series plan (21:30 on provider 9), an alternate sharing
@@ -142,5 +151,102 @@ describe("toBoardRows", () => {
     const off = toBoardRows(g, "2026-07-21");
     expect(off.rows).toEqual([]);
     expect(off.path).toEqual([]);
+  });
+});
+
+function gi(over: Partial<GuideItem>): GuideItem {
+  return {
+    id: 1, date: "2026-07-20", start_min: 1140, end_min: 1200, title_id: 1,
+    season: 1, episode: 1, provider_id: 8, is_plan: true, pinned: false,
+    edited: false, watched: false, ...over,
+  };
+}
+
+describe("snap15", () => {
+  it("rounds to the nearest 15", () => {
+    expect(snap15(1140)).toBe(1140);
+    expect(snap15(1147)).toBe(1140);
+    expect(snap15(1148)).toBe(1155);
+    expect(snap15(1132)).toBe(1125);
+  });
+});
+
+describe("layoutDayColumns", () => {
+  it("gives every non-overlapping item colCount 1", () => {
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 1080, end_min: 1140 }),
+      gi({ id: 2, start_min: 1140, end_min: 1200 }), // touches edge — not overlap
+    ]);
+    expect(out.every((o) => o.colCount === 1 && o.colIndex === 0)).toBe(true);
+  });
+
+  it("splits two overlapping items into two columns", () => {
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 1080, end_min: 1200 }),
+      gi({ id: 2, start_min: 1140, end_min: 1260 }),
+    ]);
+    expect(out.map((o) => o.colCount)).toEqual([2, 2]);
+    expect(out.map((o) => o.colIndex).sort()).toEqual([0, 1]);
+  });
+
+  it("packs a third non-overlapping-with-first item back into column 0", () => {
+    // A[0-120] overlaps B[60-180]; C[120-180] starts when A ends -> reuses A's column
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 0, end_min: 120 }),
+      gi({ id: 2, start_min: 60, end_min: 180 }),
+      gi({ id: 3, start_min: 120, end_min: 180 }),
+    ]);
+    const byId = new Map(out.map((o) => [o.item.id, o]));
+    expect(byId.get(1)!.colCount).toBe(2);
+    expect(byId.get(3)!.colIndex).toBe(0); // reused column A vacated
+  });
+
+  it("keeps a separate non-overlapping cluster at colCount 1", () => {
+    const out = layoutDayColumns([
+      gi({ id: 1, start_min: 0, end_min: 60 }),
+      gi({ id: 2, start_min: 30, end_min: 90 }), // cluster A (2 cols)
+      gi({ id: 3, start_min: 600, end_min: 660 }), // cluster B alone
+    ]);
+    expect(out.find((o) => o.item.id === 3)!.colCount).toBe(1);
+  });
+});
+
+describe("toTimeGrid", () => {
+  const g: GuideResponse = {
+    id: 1, start_date: "2026-07-20", end_date: "2026-07-21", seed: 0,
+    items: [
+      gi({ id: 1, date: "2026-07-20", start_min: 1110, end_min: 1200 }), // 18:30-20:00
+      gi({ id: 2, date: "2026-07-21", start_min: 1230, end_min: 1350 }), // 20:30-22:30
+      gi({ id: 3, date: "2026-07-20", start_min: 0, end_min: 60, is_plan: false }), // alternate: ignored
+    ],
+    titles: { "1": { name: "A", kind: "series", tmdb_id: 1, poster_path: "" } },
+    providers: { "8": { id: 8, name: "Netflix", logo_path: "" } },
+  } as unknown as GuideResponse;
+
+  it("computes the window from plan items only, floored/ceiled to the hour", () => {
+    const grid = toTimeGrid(g, "2026-07-20");
+    expect(grid.windowStart).toBe(1080); // floor(1110/60)*60 = 18:00
+    expect(grid.windowEnd).toBe(1380); // ceil(1350/60)*60 = 23:00
+    expect(grid.windowHours).toBe(5); // (1380 - 1080) / 60
+  });
+
+  it("sets topFactor/spanFactor relative to windowStart", () => {
+    const grid = toTimeGrid(g, "2026-07-20");
+    const item1 = grid.days[0].items[0];
+    expect(item1.topFactor).toBeCloseTo((1110 - 1080) / 60);
+    expect(item1.spanFactor).toBeCloseTo((1200 - 1110) / 60);
+  });
+
+  it("flags isToday and isPast per day", () => {
+    const grid = toTimeGrid(g, "2026-07-21");
+    expect(grid.days[0].isPast).toBe(true); // 07-20 < today 07-21
+    expect(grid.days[1].isToday).toBe(true);
+  });
+
+  it("returns a zeroed window when there are no plan items", () => {
+    const empty = { ...g, items: [] } as GuideResponse;
+    const grid = toTimeGrid(empty, "2026-07-20");
+    expect(grid.windowHours).toBe(0);
+    expect(grid.days.every((d) => d.items.length === 0)).toBe(true);
   });
 });
