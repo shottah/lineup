@@ -99,8 +99,8 @@ export function GridItemCard({
       <button
         type="button"
         onClick={onToggleOpen}
-        {...listeners}
-        {...attributes}
+        {...(isPast ? {} : listeners)}
+        {...(isPast ? {} : attributes)}
         className={`block h-full w-full rounded-xl px-2.5 pt-[7px] pb-2 text-left text-ink ${
           isPast ? "" : "cursor-grab active:cursor-grabbing"
         }`}
