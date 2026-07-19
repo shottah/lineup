@@ -1,3 +1,7 @@
+"use client";
+
+import { useDroppable } from "@dnd-kit/core";
+
 import { monthDay, type TimeGridDay } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
@@ -17,11 +21,13 @@ export type DayColumnProps = {
   onClose: () => void;
 };
 
-// A droppable-to-be day column (drag lands in Task 4): the day header
-// (dow + date, matching the pre-grid header styling) above a
-// position:relative body whose items are absolutely placed by toTimeGrid's
-// per-item factors. Past days get a dimmed/locked visual treatment only —
-// no interaction changes in this task.
+// A droppable day column (design spec §3/§4): the day header (dow + date,
+// matching the pre-grid header styling) above a position:relative body
+// whose items are absolutely placed by toTimeGrid's per-item factors.
+// Disabled as a drop target when the day is past — dnd-kit excludes
+// disabled droppables from collision detection, so a drag simply can't
+// resolve `over` to a past column. Past days also get the pre-existing
+// dimmed/grayscale treatment, which doubles as the "locked" affordance.
 export function DayColumn({
   guide,
   day,
@@ -33,6 +39,7 @@ export function DayColumn({
   onClose,
 }: DayColumnProps) {
   const gridlines = Array.from({ length: hourCount }, (_, i) => i);
+  const { setNodeRef, isOver } = useDroppable({ id: day.date, disabled: day.isPast });
 
   return (
     <div className="flex min-w-[160px] flex-col snap-start lg:min-w-0">
@@ -46,7 +53,10 @@ export function DayColumn({
       </div>
 
       <div
-        className={`relative border-l border-line ${day.isPast ? "opacity-60 grayscale-[25%]" : ""}`}
+        ref={setNodeRef}
+        className={`relative border-l border-line ${day.isPast ? "opacity-60 grayscale-[25%]" : ""} ${
+          isOver && !day.isPast ? "bg-acc-soft/40" : ""
+        }`}
         style={{ height: "calc(var(--hours) * var(--hour-px))" }}
       >
         {gridlines.map((i) => (
@@ -75,6 +85,7 @@ export function DayColumn({
               columnDow={day.dow}
               columns={columns}
               minItemPx={minItemPx}
+              isPast={day.isPast}
               open={openKey === key}
               onToggleOpen={() => onToggleOpen(key)}
               onClose={onClose}

@@ -2,6 +2,8 @@
 
 import { type CSSProperties } from "react";
 
+import { useDraggable } from "@dnd-kit/core";
+
 import { epLabel, type TimeGridItem } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
@@ -20,6 +22,11 @@ export type GridItemCardProps = {
   columnDow: string;
   columns: { date: string; dow: string }[];
   minItemPx: number;
+  // Whether this card's own day is in the past (design spec §4) — disables
+  // dragging and is the only thing distinguishing a past card from a
+  // draggable one; the dimmed look itself comes from DayColumn's column-
+  // level treatment.
+  isPast: boolean;
   open: boolean;
   onToggleOpen: () => void;
   onClose: () => void;
@@ -38,6 +45,7 @@ export function GridItemCard({
   columnDow,
   columns,
   minItemPx,
+  isPast,
   open,
   onToggleOpen,
   onClose,
@@ -46,6 +54,20 @@ export function GridItemCard({
   const hue = usePosterHue(item.title_id, title.poster_path);
   const watched = item.watched;
   const provider = guide.providers[String(item.provider_id)];
+
+  // Drag-to-move (design spec §3): setNodeRef/transform go on the outer,
+  // absolutely-positioned box (the whole slot — quick-actions cluster
+  // included — moves together), while listeners/attributes go on the
+  // inner click-to-open button only, so it stays the sole focusable
+  // element and the drag handle doubles as the existing click target.
+  // dnd-kit's PointerSensor activation distance (wired in CalendarView) is
+  // what lets a plain click still reach onToggleOpen instead of starting a
+  // drag, and keeping listeners off the outer div means the quick-actions
+  // buttons (siblings, not descendants of the button) never see them.
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: String(item.id),
+    disabled: isPast,
+  });
 
   // ItemMenu's Swap/Move pickers need more room than a short/overlapping
   // slot's floored box — while open, the card grows from a min-height
@@ -59,19 +81,29 @@ export function GridItemCard({
     ...(open
       ? { minHeight: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)`, zIndex: 30 }
       : { height: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)` }),
+    ...(transform
+      ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 40 }
+      : null),
   } as unknown as CSSProperties;
 
   return (
     <div
+      ref={setNodeRef}
       className={`guide-card group absolute rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,transform,opacity] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${
         open ? "z-30 overflow-visible" : "overflow-hidden"
-      } ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}`}
+      } ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""} ${
+        isDragging ? "opacity-80 shadow-lg" : ""
+      }`}
       style={boxStyle}
     >
       <button
         type="button"
         onClick={onToggleOpen}
-        className="block h-full w-full rounded-xl px-2.5 pt-[7px] pb-2 text-left text-ink"
+        {...listeners}
+        {...attributes}
+        className={`block h-full w-full rounded-xl px-2.5 pt-[7px] pb-2 text-left text-ink ${
+          isPast ? "" : "cursor-grab active:cursor-grabbing"
+        }`}
       >
         <div className="line-clamp-2 text-[13px] leading-[1.25] font-semibold">
           {watched ? "✓ " : ""}
