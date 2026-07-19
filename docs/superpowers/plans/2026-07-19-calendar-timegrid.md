@@ -70,7 +70,7 @@ describe("snap15", () => {
     expect(snap15(1140)).toBe(1140);
     expect(snap15(1147)).toBe(1140);
     expect(snap15(1148)).toBe(1155);
-    expect(snap15(1132)).toBe(1140);
+    expect(snap15(1132)).toBe(1125);
   });
 });
 
