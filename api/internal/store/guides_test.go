@@ -910,6 +910,122 @@ func TestUnmarkItemWatched(t *testing.T) {
 	})
 }
 
+// TestUpdateGuideItemPastMove covers Task 2's move-rule enforcement: a move
+// (Date and/or StartMin set) is rejected outright when the item's current
+// date is already in the past (ErrPastMove), regardless of the requested
+// target, and rejected when the target date itself is in the past
+// (ErrPastTarget) even though the item's current date is still upcoming.
+// The scheduling window is NOT enforced here (guide.Generate's concern, not
+// the store's); non-move patches (pin-only) skip the check entirely, even
+// on a past item.
+func TestUpdateGuideItemPastMove(t *testing.T) {
+	const today = "2026-01-08"
+
+	// newPastFutureGuide seeds one guide with a past-dated item (2026-01-05,
+	// before today) and a future-dated item (2026-01-10, after today).
+	newPastFutureGuide := func(t *testing.T, s *Store, uid, seriesID int64) *Guide {
+		t.Helper()
+		g, err := s.CreateGuideReplacingOverlaps(context.Background(), uid, "2026-01-01", "2026-01-14", 1, []guide.Item{
+			{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+			{Date: "2026-01-10", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 2, Provider: 901, IsPlan: true},
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		return g
+	}
+	itemOn := func(g *Guide, date string) int64 {
+		for _, it := range g.Items {
+			if it.Date == date {
+				return it.ID
+			}
+		}
+		return 0
+	}
+
+	t.Run("moving the past item by StartMin only is rejected", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		ns := 100
+		_, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-05"), GuideItemUpdate{StartMin: &ns, Today: today})
+		if !errors.Is(err, ErrPastMove) {
+			t.Fatalf("err = %v, want ErrPastMove", err)
+		}
+	})
+
+	t.Run("moving the past item to any target date is still ErrPastMove", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		nd := "2026-01-12" // a future target date; irrelevant, the source date already disqualifies the move
+		_, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-05"), GuideItemUpdate{Date: &nd, Today: today})
+		if !errors.Is(err, ErrPastMove) {
+			t.Fatalf("err = %v, want ErrPastMove", err)
+		}
+	})
+
+	t.Run("moving the future item to a past date is ErrPastTarget", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		nd := "2026-01-03"
+		_, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-10"), GuideItemUpdate{Date: &nd, Today: today})
+		if !errors.Is(err, ErrPastTarget) {
+			t.Fatalf("err = %v, want ErrPastTarget", err)
+		}
+	})
+
+	t.Run("moving the future item to another future date and time succeeds", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		nd := "2026-01-11"
+		ns := 1200
+		it, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-10"), GuideItemUpdate{Date: &nd, StartMin: &ns, Today: today})
+		if err != nil {
+			t.Fatalf("move: %v", err)
+		}
+		if it.Date != nd || it.StartMin != ns {
+			t.Fatalf("moved item = %+v, want date=%s start_min=%d", it, nd, ns)
+		}
+	})
+
+	t.Run("window is not enforced: a StartMin outside typical hours on a future date succeeds", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		ns := 300 // 05:00, well outside any evening scheduling window
+		it, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-10"), GuideItemUpdate{StartMin: &ns, Today: today})
+		if err != nil {
+			t.Fatalf("move outside window: %v", err)
+		}
+		if it.StartMin != ns {
+			t.Fatalf("start_min = %d, want %d", it.StartMin, ns)
+		}
+	})
+
+	t.Run("a pin-only patch on the past item skips enforcement", func(t *testing.T) {
+		s := testStore(t)
+		ctx := context.Background()
+		uid, seriesID, _ := seedGuideWorld(t, s)
+		g := newPastFutureGuide(t, s, uid, seriesID)
+		pt := true
+		it, err := s.UpdateGuideItem(ctx, uid, g.ID, itemOn(g, "2026-01-05"), GuideItemUpdate{Pinned: &pt, Today: today})
+		if err != nil {
+			t.Fatalf("pin-only: %v", err)
+		}
+		if !it.Pinned {
+			t.Fatal("pinned not applied")
+		}
+	})
+}
+
 // TestGuideLookups guards #18: the sidecar dictionaries must resolve every
 // distinct title/provider id referenced by a guide's items, with the right
 // name/kind/tmdb_id (titles) and name/logo_path (providers) — the data the

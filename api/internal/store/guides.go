@@ -14,6 +14,11 @@ import (
 // to another user (indistinguishable by design).
 var ErrGuideNotFound = errors.New("store: guide not found")
 
+// ErrPastMove is returned when the moved item's current date is already in
+// the past; ErrPastTarget when the requested target date is in the past.
+var ErrPastMove = errors.New("store: cannot move a past slot")
+var ErrPastTarget = errors.New("store: cannot move a slot into the past")
+
 // TMDB omits runtimes for many current shows; a zero-duration item would
 // let the scheduler stack everything at the window start. Assume a
 // typical episode/feature length instead.
@@ -59,6 +64,9 @@ type GuideItemUpdate struct {
 	Episode     *int
 	Pinned      *bool
 	SetEdited   bool
+	// Today (YYYY-MM-DD, UTC) gates move enforcement; empty disables it.
+	// Only consulted when the update is a move (Date or StartMin set).
+	Today string
 	// SwapProviders is the new title's region-filtered provider ids
 	// (SwapInfo.Providers, sorted ascending), set only on a title swap.
 	// UpdateGuideItem keeps the item's current provider when it's among
@@ -364,6 +372,27 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID int
 		return nil, fmt.Errorf("store: update guide item: begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if (upd.Date != nil || upd.StartMin != nil) && upd.Today != "" {
+		var currentDate string
+		err := tx.QueryRow(ctx, `
+SELECT gi.date::text FROM guide_items gi
+JOIN guides g ON g.id = gi.guide_id
+WHERE gi.id = $3 AND gi.guide_id = $2 AND g.user_id = $1
+FOR UPDATE OF gi`, userID, guideID, itemID).Scan(&currentDate)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrGuideNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("store: update guide item: load date: %w", err)
+		}
+		if currentDate < upd.Today {
+			return nil, ErrPastMove
+		}
+		if upd.Date != nil && *upd.Date < upd.Today {
+			return nil, ErrPastTarget
+		}
+	}
 
 	q := `
 UPDATE guide_items gi SET
