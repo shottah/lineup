@@ -100,3 +100,14 @@ body {
     animation: guide-alt-pulse 2.4s ease-in-out infinite;
   }
 }
+
+/* While a calendar drag is active (data-dragging set by CalendarView):
+   freeze the box-shadow pulse — it repaints a large blurred shadow every
+   frame on the focused source card — and make all cards transparent to
+   the pointer so hover glows don't churn as the overlay crosses them.
+   One attribute flip instead of N re-renders (the react-beautiful-dnd
+   preset-styles technique). */
+body[data-dragging] .guide-card {
+  animation: none !important;
+  pointer-events: none;
+}

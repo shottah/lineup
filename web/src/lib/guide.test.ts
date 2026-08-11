@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { GuideItem, GuideResponse, GuideTitleLookup } from "./types";
 import {
+  dropStartMin,
   epLabel,
   fmtTime,
   layoutDayColumns,
   monthDay,
   snap15,
+  snapDragDelta,
   toBoardRows,
   toCalendarColumns,
   toTimeGrid,
@@ -168,6 +170,71 @@ describe("snap15", () => {
     expect(snap15(1147)).toBe(1140);
     expect(snap15(1148)).toBe(1155);
     expect(snap15(1132)).toBe(1125);
+  });
+});
+
+describe("dropStartMin", () => {
+  it("converts a pixel delta to minutes at the given hour scale and snaps to 15", () => {
+    // 56px at 56px/hour = +60min from a 19:00 start.
+    expect(dropStartMin(1140, 56, 56, 1080, 1440, 60)).toBe(1200);
+  });
+
+  it("snaps an off-grid landing to the nearest quarter hour", () => {
+    // 25px at 60px/hour = +25min → 19:25 → snaps to 19:30.
+    expect(dropStartMin(1140, 25, 60, 1080, 1440, 60)).toBe(1170);
+  });
+
+  it("returns the start unchanged for a zero delta", () => {
+    expect(dropStartMin(1140, 0, 56, 1080, 1440, 60)).toBe(1140);
+  });
+
+  it("snaps an off-grid start onto the grid even for a zero delta", () => {
+    // 19:42 start (cumulative-runtime scheduling) snaps to 19:45.
+    expect(dropStartMin(1182, 0, 56, 1080, 1440, 42)).toBe(1185);
+  });
+
+  it("clamps to the window start when dragged above it", () => {
+    expect(dropStartMin(1140, -10000, 56, 1080, 1440, 60)).toBe(1080);
+  });
+
+  it("clamps so the item's end stays inside the window", () => {
+    // 90-minute item can start no later than windowEnd - 90.
+    expect(dropStartMin(1140, 10000, 56, 1080, 1440, 90)).toBe(1350);
+  });
+
+  it("keeps the bottom clamp on the quarter-hour grid for off-grid durations", () => {
+    // A 42-minute item's latest fitting start is 23:18 (1398), but the
+    // latest ON-GRID start that still fits is 23:15 (1395).
+    expect(dropStartMin(1140, 10000, 56, 1080, 1440, 42)).toBe(1395);
+  });
+});
+
+describe("snapDragDelta", () => {
+  it("matches plain quarter-hour steps for an on-grid start", () => {
+    // hourPx 56 → 14px per 15min; 20px of drag rounds to one step.
+    expect(snapDragDelta(1140, 20, 56)).toBe(14);
+    expect(snapDragDelta(1140, 0, 56)).toBe(0);
+  });
+
+  it("aligns an off-grid start onto the absolute grid", () => {
+    // 19:42 start: zero drag still nudges the ghost +3min (2.8px) so it
+    // sits on the 19:45 gridline the drop will actually land on.
+    expect(snapDragDelta(1182, 0, 56)).toBeCloseTo(2.8);
+  });
+
+  it("handles negative (upward) deltas", () => {
+    expect(snapDragDelta(1140, -20, 56)).toBe(-14);
+  });
+
+  it("agrees with dropStartMin about the landing slot", () => {
+    for (const [start, deltaY] of [
+      [1140, 37],
+      [1182, -25],
+      [1263, 11],
+    ] as const) {
+      const ghostMin = start + (snapDragDelta(start, deltaY, 56) / 56) * 60;
+      expect(ghostMin).toBeCloseTo(dropStartMin(start, deltaY, 56, 0, 100000, 0));
+    }
   });
 });
 

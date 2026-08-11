@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { useDroppable } from "@dnd-kit/core";
 
 import { monthDay, type TimeGridDay } from "@/lib/guide";
@@ -28,7 +30,9 @@ export type DayColumnProps = {
 // disabled droppables from collision detection, so a drag simply can't
 // resolve `over` to a past column. Past days also get the pre-existing
 // dimmed/grayscale treatment, which doubles as the "locked" affordance.
-export function DayColumn({
+// Memoized so CalendarView's drag start/end state flips don't re-render
+// all seven columns (its day/columns/handler props are all stable).
+export const DayColumn = memo(function DayColumn({
   guide,
   day,
   hourCount,
@@ -95,4 +99,4 @@ export function DayColumn({
       </div>
     </div>
   );
-}
+});
