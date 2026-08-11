@@ -16,11 +16,14 @@ export type DayColumnProps = {
   // gridline per hour; the actual pixel math comes from the --hour-px/
   // --hours CSS vars set by CalendarView on a shared ancestor.
   hourCount: number;
-  columns: { date: string; dow: string }[];
   minItemPx: number;
-  openKey: string | null;
-  onToggleOpen: (key: string) => void;
-  onClose: () => void;
+  // "Now" as hour-heights from the window top (nowLineFactor), or null
+  // when the line shouldn't render in this column — CalendarView passes a
+  // value only for the column "now" belongs to (today, or yesterday for
+  // the past-midnight hours of a window that crosses 24:00), so the prop
+  // stays a stable null for the other columns and doesn't defeat the
+  // memo below.
+  nowFactor: number | null;
 };
 
 // A droppable day column (design spec §3/§4): the day header (dow + date,
@@ -30,18 +33,10 @@ export type DayColumnProps = {
 // disabled droppables from collision detection, so a drag simply can't
 // resolve `over` to a past column. Past days also get the pre-existing
 // dimmed/grayscale treatment, which doubles as the "locked" affordance.
-// Memoized so CalendarView's drag start/end state flips don't re-render
-// all seven columns (its day/columns/handler props are all stable).
-export const DayColumn = memo(function DayColumn({
-  guide,
-  day,
-  hourCount,
-  columns,
-  minItemPx,
-  openKey,
-  onToggleOpen,
-  onClose,
-}: DayColumnProps) {
+// Memoized so CalendarView's drag start/end and minute-tick state flips
+// don't re-render all seven columns (every prop is a primitive, a
+// memoized object, or null).
+export const DayColumn = memo(function DayColumn({ guide, day, hourCount, minItemPx, nowFactor }: DayColumnProps) {
   const gridlines = Array.from({ length: hourCount }, (_, i) => i);
   const { setNodeRef, isOver } = useDroppable({ id: day.date, disabled: day.isPast });
 
@@ -78,24 +73,34 @@ export const DayColumn = memo(function DayColumn({
           </div>
         )}
 
-        {day.items.map((gridItem) => {
-          const key = `${day.date}-${gridItem.item.id}`;
-          return (
-            <GridItemCard
-              key={key}
-              guide={guide}
-              gridItem={gridItem}
-              columnDate={day.date}
-              columnDow={day.dow}
-              columns={columns}
-              minItemPx={minItemPx}
-              isPast={day.isPast}
-              open={openKey === key}
-              onToggleOpen={() => onToggleOpen(key)}
-              onClose={onClose}
-            />
-          );
-        })}
+        {day.items.map((gridItem) => (
+          <GridItemCard
+            key={gridItem.item.id}
+            guide={guide}
+            gridItem={gridItem}
+            columnDow={day.dow}
+            minItemPx={minItemPx}
+            isPast={day.isPast}
+          />
+        ))}
+
+        {/* The "now" line: above the cards (z-auto) so it reads across
+            whatever is airing right now, but below the quick-actions
+            cluster (z-10) and the mobile sticky gutter (z-20) so it
+            never strikes through the hover pill or paints over the hour
+            labels during horizontal scroll. Never intercepts the
+            pointer. */}
+        {nowFactor !== null && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 z-[5]"
+            style={{ top: `calc(var(--hour-px) * ${nowFactor})` }}
+          >
+            <div className="relative border-t-2 border-acc">
+              <div className="absolute -top-[5px] -left-1 size-2 rounded-full bg-acc" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,26 +8,25 @@ export type SlotQuickActionsProps = {
   guideId: number;
   item: GuideItem;
   title: GuideTitleLookup;
-  // The column the card currently renders in — same role as ItemMenu's
-  // columnDow, needed only for the Pin toast ("Pinned to {dow}").
+  // The column the card currently renders in, needed only for the Pin
+  // toast ("Pinned to {dow}").
   columnDow: string;
 };
 
-// Hover/keyboard shortcut cluster for a calendar slot card (design spec
-// docs/design/guide-card-redesign.md Addendum §A.0-A.10): watched/pin
-// toggles + one-shot remove. Reuses ItemMenu's exact mutation semantics
-// (same endpoints, toasts, invalidations) via the shared
-// useGuideItemMutations hook, so the shortcut and the menu stay
-// behaviorally identical — this owns its own mutation instances rather
-// than borrowing ItemMenu's because CalendarView only mounts one or the
-// other (§A.5): the cluster renders while ItemMenu is closed.
+// The card's only action surface (design spec docs/design/
+// guide-card-redesign.md Addendum §A.0-A.10, menu removed in #53):
+// watched/pin toggles + one-shot remove via the useGuideItemMutations
+// configs. Revealed on hover/focus-within on pointer devices; on coarse
+// pointers (touch) there is no hover and iOS taps don't move focus, so
+// the cluster stays permanently visible there instead — otherwise touch
+// users would have no way to reach these actions at all.
 export function SlotQuickActions({ guideId, item, title, columnDow }: SlotQuickActionsProps) {
   const { watchedM, pinM, removeM } = useGuideItemMutations({ guideId, item, title, columnDow });
 
   const busy = watchedM.isPending || pinM.isPending || removeM.isPending;
 
   return (
-    <div className="pointer-events-none absolute right-1.5 top-1.5 z-10 flex items-center gap-px rounded-full border border-line bg-panel/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+    <div className="pointer-events-none absolute right-1.5 top-1.5 z-10 flex items-center gap-px rounded-full border border-line bg-panel/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
       <button
         type="button"
         aria-pressed={item.watched}

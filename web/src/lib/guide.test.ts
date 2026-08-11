@@ -7,6 +7,7 @@ import {
   fmtTime,
   layoutDayColumns,
   monthDay,
+  nowLineFactor,
   snap15,
   snapDragDelta,
   toBoardRows,
@@ -206,6 +207,32 @@ describe("dropStartMin", () => {
     // A 42-minute item's latest fitting start is 23:18 (1398), but the
     // latest ON-GRID start that still fits is 23:15 (1395).
     expect(dropStartMin(1140, 10000, 56, 1080, 1440, 42)).toBe(1395);
+  });
+});
+
+describe("nowLineFactor", () => {
+  it("returns hours from the window top when now is inside the window", () => {
+    // 19:30 in an 18:00–24:00 window sits 1.5 hour-heights down.
+    expect(nowLineFactor(1170, 1080, 1440)).toBe(1.5);
+  });
+
+  it("includes the top edge but excludes the bottom edge", () => {
+    // At exactly windowEnd the rule would draw below the column body, so
+    // the bottom edge hides the line instead of overhanging it.
+    expect(nowLineFactor(1080, 1080, 1440)).toBe(0);
+    expect(nowLineFactor(1440, 1080, 1440)).toBeNull();
+  });
+
+  it("returns null when now is outside the window", () => {
+    expect(nowLineFactor(1079, 1080, 1440)).toBeNull();
+    expect(nowLineFactor(1441, 1080, 1440)).toBeNull();
+    expect(nowLineFactor(540, 1080, 1440)).toBeNull();
+  });
+
+  it("accepts past-midnight minutes for windows that cross midnight", () => {
+    // 00:15 in yesterday's column of an 18:00–26:00 window: the caller
+    // passes nowMin + 1440 = 1455.
+    expect(nowLineFactor(1455, 1080, 1560)).toBe(6.25);
   });
 });
 

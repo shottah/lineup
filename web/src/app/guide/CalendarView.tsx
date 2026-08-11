@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 
-import { dropStartMin, monthDay, snapDragDelta, toTimeGrid, type TimeGridItem } from "@/lib/guide";
+import { dropStartMin, monthDay, nowLineFactor, snapDragDelta, toTimeGrid, type TimeGridItem } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
 import { DayColumn } from "./DayColumn";
@@ -47,14 +47,46 @@ const AVAILABLE_H = `max(100dvh - ${HEADER_OFFSET}px, 66dvh)`;
 // (design spec §3): drag delta/day drop resolve to a move mutation here,
 // while --hour-px stays CSS-driven for layout — hourPxRef below is a
 // JS-side mirror of that same formula used only for the drag math. Also
-// owns the "one ItemMenu open at a time" state, same as the pre-grid
-// CalendarView, keyed by `${date}-${itemId}`.
+// owns the minute-ticking "now" clock behind today's current-time line.
 export function CalendarView({ guide, today }: { guide: GuideResponse; today: string }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const grid = useMemo(() => toTimeGrid(guide, today), [guide, today]);
-  const columns = useMemo(() => grid.days.map((d) => ({ date: d.date, dow: d.dow })), [grid]);
 
   const dragM = useGuideItemDrag({ guideId: guide.id });
+
+  // The "now" clock: minutes since local midnight plus the local date
+  // (and yesterday's), ticking once a minute. The dates come from the
+  // client clock, NOT the server-rendered `today` prop — a tab left open
+  // past midnight must move the line to the new day's column, while the
+  // frozen prop keeps styling the header labels exactly as served.
+  // Starts null (no line) so the server render and the client's first
+  // paint agree — the line appears in the mount effect, never during
+  // hydration.
+  const [now, setNow] = useState<{ min: number; today: string; yesterday: string } | null>(null);
+  useEffect(() => {
+    const localDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const tick = () => {
+      const d = new Date();
+      const y = new Date(d);
+      y.setDate(d.getDate() - 1);
+      setNow({ min: d.getHours() * 60 + d.getMinutes(), today: localDate(d), yesterday: localDate(y) });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Which column carries the line, and where. Today's column gets the
+  // plain factor; for windows that run past midnight (windowEnd > 1440),
+  // the early-morning hours belong to YESTERDAY's column at nowMin +
+  // 1440 — at 00:15 under a window ending 02:00, "now" sits in the
+  // 24:15 row of the previous day.
+  const nowFactorFor = (date: string): number | null => {
+    if (now === null) return null;
+    if (date === now.today) return nowLineFactor(now.min, grid.windowStart, grid.windowEnd);
+    if (date === now.yesterday) return nowLineFactor(now.min + 1440, grid.windowStart, grid.windowEnd);
+    return null;
+  };
 
   // Mirrors the --hour-px CSS formula in JS (design spec §3) so the drag's
   // vertical pixel delta can be converted to minutes; CSS remains the
@@ -160,9 +192,6 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
     activeRef.current = gi;
     dragScrollTopRef.current = scrollElRef.current?.scrollTop ?? 0;
     dragWinYRef.current = window.scrollY;
-    // An open ItemMenu enlarges the card; collapse it so the placeholder
-    // matches the collapsed ghost (and the slot the item will land in).
-    setOpenKey(null);
     document.body.setAttribute("data-dragging", "");
   }
 
@@ -190,16 +219,11 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
     );
     const newDate = over ? String(over.id) : item.date;
 
-    // Same date, same start — a no-op drag (or the click that opens
-    // ItemMenu, which never reaches here past the activation distance
-    // anyway): don't fire the mutation.
+    // Same date, same start — a no-op drag: don't fire the mutation.
     if (newDate === item.date && newStart === item.start_min) return;
 
     dragM.mutate({ itemId: item.id, date: newDate, startMin: newStart });
   }
-
-  const onToggleOpen = useCallback((key: string) => setOpenKey((cur) => (cur === key ? null : key)), []);
-  const onClose = useCallback(() => setOpenKey(null), []);
 
   if (grid.windowHours === 0) {
     return (
@@ -254,11 +278,8 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
               guide={guide}
               day={day}
               hourCount={grid.windowHours}
-              columns={columns}
               minItemPx={MIN_ITEM_PX}
-              openKey={openKey}
-              onToggleOpen={onToggleOpen}
-              onClose={onClose}
+              nowFactor={nowFactorFor(day.date)}
             />
           ))}
         </div>
