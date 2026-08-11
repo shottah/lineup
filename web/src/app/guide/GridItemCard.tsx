@@ -7,7 +7,6 @@ import { useDraggable } from "@dnd-kit/core";
 import { epLabel, type TimeGridItem } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
-import { ItemMenu } from "./ItemMenu";
 import { ProviderChip } from "./ProviderChip";
 import { SlotQuickActions } from "./SlotQuickActions";
 import { usePosterHue } from "./usePosterHue";
@@ -15,75 +14,46 @@ import { usePosterHue } from "./usePosterHue";
 export type GridItemCardProps = {
   guide: GuideResponse;
   gridItem: TimeGridItem;
-  // The day column this card renders in (= the item's own date/dow) —
-  // same role as CalendarSlotCard's columnDate/columnDow, passed straight
-  // through to ItemMenu/SlotQuickActions.
-  columnDate: string;
+  // The day column this card renders in — passed through to
+  // SlotQuickActions for the Pin toast ("Pinned to {dow}").
   columnDow: string;
-  columns: { date: string; dow: string }[];
   minItemPx: number;
   // Whether this card's own day is in the past (design spec §4) — disables
   // dragging and is the only thing distinguishing a past card from a
   // draggable one; the dimmed look itself comes from DayColumn's column-
   // level treatment.
   isPast: boolean;
-  open: boolean;
-  onToggleOpen: () => void;
-  onClose: () => void;
 };
 
 // The poster-tinted card from the pre-grid CalendarSlotCard (design spec
 // §5) minus the time pill — time now lives in TimeGutter. Absolutely
 // positioned inside its DayColumn body from toTimeGrid's topFactor/
-// spanFactor/colIndex/colCount; everything else (tint, hover glow/pulse,
-// watched dim, Pinned badge, quick-actions cluster, click-to-open
-// ItemMenu) is unchanged from the card it replaces.
-export function GridItemCard({
-  guide,
-  gridItem,
-  columnDate,
-  columnDow,
-  columns,
-  minItemPx,
-  isPast,
-  open,
-  onToggleOpen,
-  onClose,
-}: GridItemCardProps) {
+// spanFactor/colIndex/colCount. The card has no click action: watched/
+// pin/remove live in the hover quick-actions cluster, and press-and-move
+// drags the slot to a new time or day (CalendarView's DragOverlay is the
+// moving visual — this card never receives the drag transform and stays
+// in place as a dimmed placeholder while dragging). setNodeRef goes on
+// the outer, absolutely-positioned box; the drag listeners/attributes go
+// on the inner button only, so it stays the sole focusable element and
+// the quick-actions buttons (siblings, not descendants of it) never see
+// them.
+export function GridItemCard({ guide, gridItem, columnDow, minItemPx, isPast }: GridItemCardProps) {
   const { item, title, providerName, topFactor, spanFactor, colIndex, colCount } = gridItem;
   const hue = usePosterHue(item.title_id, title.poster_path);
   const watched = item.watched;
   const provider = guide.providers[String(item.provider_id)];
 
-  // Drag-to-move (design spec §3): setNodeRef goes on the outer,
-  // absolutely-positioned box, but the moving visual is CalendarView's
-  // DragOverlay — this card never receives the drag transform and stays
-  // in place as a dimmed placeholder while dragging (the FullCalendar/
-  // Schedule-X pattern: the real element never follows the pointer).
-  // Listeners/attributes go on the inner click-to-open button only, so it
-  // stays the sole focusable element and the drag handle doubles as the
-  // existing click target.
-  // dnd-kit's PointerSensor activation distance (wired in CalendarView) is
-  // what lets a plain click still reach onToggleOpen instead of starting a
-  // drag, and keeping listeners off the outer div means the quick-actions
-  // buttons (siblings, not descendants of the button) never see them.
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: String(item.id),
     disabled: isPast,
   });
 
-  // ItemMenu's Swap/Move pickers need more room than a short/overlapping
-  // slot's floored box — while open, the card grows from a min-height
-  // instead of being clamped, and floats above its neighbours (higher
-  // z-index, visible overflow) rather than clipping the picker UI.
   const boxStyle = {
     "--th": hue,
     top: `calc(var(--hour-px) * ${topFactor})`,
     left: `${(colIndex / colCount) * 100}%`,
     width: `calc(${100 / colCount}% - 4px)`,
-    ...(open
-      ? { minHeight: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)`, zIndex: 30 }
-      : { height: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)` }),
+    height: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)`,
     // Inline so it outranks every opacity class in the cascade — the
     // watched treatment's focus-within:opacity-100 would otherwise win
     // while the drag holds focus on the inner button.
@@ -93,14 +63,14 @@ export function GridItemCard({
   return (
     <div
       ref={setNodeRef}
-      className={`guide-card group absolute rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,opacity,translate] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${
-        open ? "z-30 overflow-visible" : "overflow-hidden"
-      } ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}`}
+      className={`guide-card group absolute overflow-hidden rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,opacity,translate] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${
+        watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""
+      }`}
       style={boxStyle}
     >
       <button
         type="button"
-        onClick={onToggleOpen}
+        aria-label={`${title.name}, drag to reschedule`}
         {...(isPast ? {} : listeners)}
         {...(isPast ? {} : attributes)}
         className={`block h-full w-full rounded-xl px-2.5 pt-[7px] pb-2 text-left text-ink ${
@@ -131,20 +101,7 @@ export function GridItemCard({
           </span>
         )}
       </button>
-      {!open && (
-        <SlotQuickActions guideId={guide.id} item={item} title={title} columnDow={columnDow} />
-      )}
-      {open && (
-        <ItemMenu
-          guideId={guide.id}
-          item={item}
-          title={title}
-          columnDate={columnDate}
-          columnDow={columnDow}
-          columns={columns}
-          onClose={onClose}
-        />
-      )}
+      <SlotQuickActions guideId={guide.id} item={item} title={title} columnDow={columnDow} />
     </div>
   );
 }

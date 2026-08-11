@@ -7,6 +7,7 @@ import {
   fmtTime,
   layoutDayColumns,
   monthDay,
+  nowLineFactor,
   snap15,
   snapDragDelta,
   toBoardRows,
@@ -206,6 +207,24 @@ describe("dropStartMin", () => {
     // A 42-minute item's latest fitting start is 23:18 (1398), but the
     // latest ON-GRID start that still fits is 23:15 (1395).
     expect(dropStartMin(1140, 10000, 56, 1080, 1440, 42)).toBe(1395);
+  });
+});
+
+describe("nowLineFactor", () => {
+  it("returns hours from the window top when now is inside the window", () => {
+    // 19:30 in an 18:00–24:00 window sits 1.5 hour-heights down.
+    expect(nowLineFactor(1170, 1080, 1440)).toBe(1.5);
+  });
+
+  it("includes both window edges", () => {
+    expect(nowLineFactor(1080, 1080, 1440)).toBe(0);
+    expect(nowLineFactor(1440, 1080, 1440)).toBe(6);
+  });
+
+  it("returns null when now is outside the window", () => {
+    expect(nowLineFactor(1079, 1080, 1440)).toBeNull();
+    expect(nowLineFactor(1441, 1080, 1440)).toBeNull();
+    expect(nowLineFactor(540, 1080, 1440)).toBeNull();
   });
 });
 

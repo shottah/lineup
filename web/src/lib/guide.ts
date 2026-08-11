@@ -201,6 +201,14 @@ export function dropStartMin(
   return Math.min(Math.max(snapped, windowStart), maxStart);
 }
 
+// Vertical position of the "now" line as hour-heights from the window
+// top (same unit as TimeGridItem.topFactor), or null when the current
+// time falls outside the grid's window and the line should not render.
+export function nowLineFactor(nowMin: number, windowStart: number, windowEnd: number): number | null {
+  if (nowMin < windowStart || nowMin > windowEnd) return null;
+  return (nowMin - windowStart) / 60;
+}
+
 // Ghost-position snapping for the drag overlay: converts a pixel delta to
 // the pixel delta that puts the item's start on the absolute 15-min grid
 // (snap15 of start+delta, not a quantized delta). Items scheduled at
