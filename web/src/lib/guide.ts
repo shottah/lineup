@@ -180,6 +180,30 @@ export function snap15(minutes: number): number {
   return Math.round(minutes / 15) * 15;
 }
 
+// Drag-drop landing time: pixel delta → minutes at the current hour scale,
+// snapped to the 15-min grid and clamped so the item stays inside the time
+// window. Shared by the drop handler and the drag overlay's live time label
+// so the preview can never disagree with where the item actually lands.
+export function dropStartMin(
+  startMin: number,
+  deltaY: number,
+  hourPx: number,
+  windowStart: number,
+  windowEnd: number,
+  duration: number,
+): number {
+  const deltaMinutes = Math.round((deltaY / hourPx) * 60);
+  const snapped = snap15(startMin + deltaMinutes);
+  return Math.min(Math.max(snapped, windowStart), windowEnd - duration);
+}
+
+// Snaps a vertical drag delta to whole quarter-hour steps (Math.round, not
+// ceil — a ceil-based snap biases every drag a half-slot downward).
+export function snapDeltaY(y: number, hourPx: number): number {
+  const step = hourPx / 4;
+  return Math.round(y / step) * step;
+}
+
 export type LaidOutItem = { item: GuideItem; colIndex: number; colCount: number };
 
 // Side-by-side column packing (spec §2). Items are grouped into clusters of

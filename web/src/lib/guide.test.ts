@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { GuideItem, GuideResponse, GuideTitleLookup } from "./types";
 import {
+  dropStartMin,
   epLabel,
   fmtTime,
   layoutDayColumns,
   monthDay,
   snap15,
+  snapDeltaY,
   toBoardRows,
   toCalendarColumns,
   toTimeGrid,
@@ -168,6 +170,54 @@ describe("snap15", () => {
     expect(snap15(1147)).toBe(1140);
     expect(snap15(1148)).toBe(1155);
     expect(snap15(1132)).toBe(1125);
+  });
+});
+
+describe("dropStartMin", () => {
+  it("converts a pixel delta to minutes at the given hour scale and snaps to 15", () => {
+    // 56px at 56px/hour = +60min from a 19:00 start.
+    expect(dropStartMin(1140, 56, 56, 1080, 1440, 60)).toBe(1200);
+  });
+
+  it("snaps an off-grid landing to the nearest quarter hour", () => {
+    // 25px at 60px/hour = +25min → 19:25 → snaps to 19:30.
+    expect(dropStartMin(1140, 25, 60, 1080, 1440, 60)).toBe(1170);
+  });
+
+  it("returns the start unchanged for a zero delta", () => {
+    expect(dropStartMin(1140, 0, 56, 1080, 1440, 60)).toBe(1140);
+  });
+
+  it("clamps to the window start when dragged above it", () => {
+    expect(dropStartMin(1140, -10000, 56, 1080, 1440, 60)).toBe(1080);
+  });
+
+  it("clamps so the item's end stays inside the window", () => {
+    // 90-minute item can start no later than windowEnd - 90.
+    expect(dropStartMin(1140, 10000, 56, 1080, 1440, 90)).toBe(1350);
+  });
+});
+
+describe("snapDeltaY", () => {
+  it("snaps a pixel delta to the nearest quarter-hour step", () => {
+    // hourPx 56 → 14px per 15min. 20px rounds down to one step.
+    expect(snapDeltaY(20, 56)).toBe(14);
+    expect(snapDeltaY(22, 56)).toBe(28);
+  });
+
+  it("rounds to nearest rather than always up", () => {
+    expect(snapDeltaY(6, 56)).toBe(0);
+    expect(snapDeltaY(8, 56)).toBe(14);
+  });
+
+  it("handles negative (upward) deltas", () => {
+    expect(snapDeltaY(-20, 56)).toBe(-14);
+    expect(snapDeltaY(-22, 56)).toBe(-28);
+  });
+
+  it("passes through deltas already on a step boundary", () => {
+    expect(snapDeltaY(-14, 56)).toBe(-14);
+    expect(snapDeltaY(0, 56)).toBe(0);
   });
 });
 

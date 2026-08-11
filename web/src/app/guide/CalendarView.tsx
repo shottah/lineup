@@ -1,21 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
+  pointerWithin,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 
-import { monthDay, snap15, toTimeGrid } from "@/lib/guide";
+import { dropStartMin, monthDay, snapDeltaY, toTimeGrid } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
 import { DayColumn } from "./DayColumn";
+import { GridDragPreview } from "./GridDragPreview";
 import { TimeGutter } from "./TimeGutter";
 import { useGuideItemDrag } from "./useGuideItemDrag";
 
@@ -31,10 +36,6 @@ const MIN_ITEM_PX = 22;
 // max-height, so "fill the available space, then scroll" is one formula
 // rather than two that could drift apart.
 const AVAILABLE_H = `max(100dvh - ${HEADER_OFFSET}px, 66dvh)`;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 // The Calendar tab: one shared time axis (TimeGutter) plus 7 day columns,
 // each item absolutely positioned by start time/duration (toTimeGrid).
@@ -75,15 +76,51 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
     useSensor(KeyboardSensor),
   );
 
+  // Snaps the drag's vertical delta to quarter-hour steps at the current
+  // hour scale. Applied at the DndContext level so the same snapped delta
+  // reaches the DragOverlay transform, onDragMove (the preview's time
+  // label), and onDragEnd — visuals and drop math can't drift apart.
+  // Stable identity: reads the hour scale through the ref at drag time.
+  const snapToQuarterHour = useCallback<Modifier>(
+    ({ transform }) => ({ ...transform, y: snapDeltaY(transform.y, hourPxRef.current) }),
+    [],
+  );
+
+  // Which item the DragOverlay is showing; null when no drag is active.
+  const [activeId, setActiveId] = useState<number | null>(null);
+
+  // body[data-dragging] drives the drag-time CSS in globals.css (pulse
+  // freeze + pointer-events off on cards) — one attribute flip instead of
+  // re-rendering every card. Cleared on end/cancel and on unmount (a
+  // route change mid-drag must not strand the attribute).
+  useEffect(() => () => document.body.removeAttribute("data-dragging"), []);
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(Number(event.active.id));
+    document.body.setAttribute("data-dragging", "");
+  }
+
+  function endDrag() {
+    setActiveId(null);
+    document.body.removeAttribute("data-dragging");
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    endDrag();
     const { active, over, delta } = event;
     const itemId = Number(active.id);
     const item = guide.items.find((it) => it.id === itemId);
     if (!item) return;
 
     const duration = item.end_min - item.start_min;
-    const deltaMinutes = Math.round((delta.y / hourPxRef.current) * 60);
-    const newStart = clamp(snap15(item.start_min + deltaMinutes), grid.windowStart, grid.windowEnd - duration);
+    const newStart = dropStartMin(
+      item.start_min,
+      delta.y,
+      hourPxRef.current,
+      grid.windowStart,
+      grid.windowEnd,
+      duration,
+    );
     const newDate = over ? String(over.id) : item.date;
 
     // Same date, same start — a no-op drag (or the click that opens
@@ -124,8 +161,23 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
     overflowY: "auto",
   } as CSSProperties;
 
+  const activeGridItem =
+    activeId === null
+      ? null
+      : (grid.days.flatMap((d) => d.items).find((gi) => gi.item.id === activeId) ?? null);
+
   return (
-    <DndContext sensors={sensors} modifiers={[restrictToWindowEdges]} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      // Resolve the target day from the pointer position, not the card's
+      // rectangle overlap — a card is nearly a column wide, so rect
+      // intersection flips the day before the cursor crosses the border.
+      collisionDetection={pointerWithin}
+      modifiers={[restrictToWindowEdges, snapToQuarterHour]}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={endDrag}
+    >
       <div
         className="flex gap-0 overflow-x-auto pb-2 snap-x lg:grid lg:grid-cols-[auto_repeat(7,minmax(0,1fr))] lg:gap-2"
         style={gridStyle}
@@ -145,6 +197,23 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
           />
         ))}
       </div>
+      {/* The moving visual: a position-fixed overlay in its own stacking
+          context, so it can't be clipped by this container's overflow
+          (the source card, which no longer moves, stays behind as a
+          dimmed placeholder). dropAnimation off: the optimistic cache
+          update already lands the card in its new slot on release, and
+          animating the overlay on top of that reads as a double motion. */}
+      <DragOverlay dropAnimation={null}>
+        {activeGridItem && (
+          <GridDragPreview
+            guide={guide}
+            gridItem={activeGridItem}
+            hourPxRef={hourPxRef}
+            windowStart={grid.windowStart}
+            windowEnd={grid.windowEnd}
+          />
+        )}
+      </DragOverlay>
     </DndContext>
   );
 }
