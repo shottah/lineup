@@ -8,7 +8,7 @@ import {
   layoutDayColumns,
   monthDay,
   snap15,
-  snapDeltaY,
+  snapDragDelta,
   toBoardRows,
   toCalendarColumns,
   toTimeGrid,
@@ -188,6 +188,11 @@ describe("dropStartMin", () => {
     expect(dropStartMin(1140, 0, 56, 1080, 1440, 60)).toBe(1140);
   });
 
+  it("snaps an off-grid start onto the grid even for a zero delta", () => {
+    // 19:42 start (cumulative-runtime scheduling) snaps to 19:45.
+    expect(dropStartMin(1182, 0, 56, 1080, 1440, 42)).toBe(1185);
+  });
+
   it("clamps to the window start when dragged above it", () => {
     expect(dropStartMin(1140, -10000, 56, 1080, 1440, 60)).toBe(1080);
   });
@@ -196,28 +201,40 @@ describe("dropStartMin", () => {
     // 90-minute item can start no later than windowEnd - 90.
     expect(dropStartMin(1140, 10000, 56, 1080, 1440, 90)).toBe(1350);
   });
+
+  it("keeps the bottom clamp on the quarter-hour grid for off-grid durations", () => {
+    // A 42-minute item's latest fitting start is 23:18 (1398), but the
+    // latest ON-GRID start that still fits is 23:15 (1395).
+    expect(dropStartMin(1140, 10000, 56, 1080, 1440, 42)).toBe(1395);
+  });
 });
 
-describe("snapDeltaY", () => {
-  it("snaps a pixel delta to the nearest quarter-hour step", () => {
-    // hourPx 56 → 14px per 15min. 20px rounds down to one step.
-    expect(snapDeltaY(20, 56)).toBe(14);
-    expect(snapDeltaY(22, 56)).toBe(28);
+describe("snapDragDelta", () => {
+  it("matches plain quarter-hour steps for an on-grid start", () => {
+    // hourPx 56 → 14px per 15min; 20px of drag rounds to one step.
+    expect(snapDragDelta(1140, 20, 56)).toBe(14);
+    expect(snapDragDelta(1140, 0, 56)).toBe(0);
   });
 
-  it("rounds to nearest rather than always up", () => {
-    expect(snapDeltaY(6, 56)).toBe(0);
-    expect(snapDeltaY(8, 56)).toBe(14);
+  it("aligns an off-grid start onto the absolute grid", () => {
+    // 19:42 start: zero drag still nudges the ghost +3min (2.8px) so it
+    // sits on the 19:45 gridline the drop will actually land on.
+    expect(snapDragDelta(1182, 0, 56)).toBeCloseTo(2.8);
   });
 
   it("handles negative (upward) deltas", () => {
-    expect(snapDeltaY(-20, 56)).toBe(-14);
-    expect(snapDeltaY(-22, 56)).toBe(-28);
+    expect(snapDragDelta(1140, -20, 56)).toBe(-14);
   });
 
-  it("passes through deltas already on a step boundary", () => {
-    expect(snapDeltaY(-14, 56)).toBe(-14);
-    expect(snapDeltaY(0, 56)).toBe(0);
+  it("agrees with dropStartMin about the landing slot", () => {
+    for (const [start, deltaY] of [
+      [1140, 37],
+      [1182, -25],
+      [1263, 11],
+    ] as const) {
+      const ghostMin = start + (snapDragDelta(start, deltaY, 56) / 56) * 60;
+      expect(ghostMin).toBeCloseTo(dropStartMin(start, deltaY, 56, 0, 100000, 0));
+    }
   });
 });
 

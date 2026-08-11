@@ -184,6 +184,10 @@ export function snap15(minutes: number): number {
 // snapped to the 15-min grid and clamped so the item stays inside the time
 // window. Shared by the drop handler and the drag overlay's live time label
 // so the preview can never disagree with where the item actually lands.
+// Both clamp bounds stay on the grid: windowStart is always hour-aligned,
+// and the bottom bound floors to the last on-grid start that still fits —
+// a raw `windowEnd - duration` would land off-grid for the many items
+// whose TMDB runtime isn't a multiple of 15.
 export function dropStartMin(
   startMin: number,
   deltaY: number,
@@ -192,16 +196,20 @@ export function dropStartMin(
   windowEnd: number,
   duration: number,
 ): number {
-  const deltaMinutes = Math.round((deltaY / hourPx) * 60);
-  const snapped = snap15(startMin + deltaMinutes);
-  return Math.min(Math.max(snapped, windowStart), windowEnd - duration);
+  const snapped = snap15(startMin + (deltaY / hourPx) * 60);
+  const maxStart = Math.floor((windowEnd - duration) / 15) * 15;
+  return Math.min(Math.max(snapped, windowStart), maxStart);
 }
 
-// Snaps a vertical drag delta to whole quarter-hour steps (Math.round, not
-// ceil — a ceil-based snap biases every drag a half-slot downward).
-export function snapDeltaY(y: number, hourPx: number): number {
-  const step = hourPx / 4;
-  return Math.round(y / step) * step;
+// Ghost-position snapping for the drag overlay: converts a pixel delta to
+// the pixel delta that puts the item's start on the absolute 15-min grid
+// (snap15 of start+delta, not a quantized delta). Items scheduled at
+// off-grid starts (cumulative TMDB runtimes) therefore snap onto the same
+// gridline dropStartMin will land them on, instead of stepping through
+// off-grid positions parallel to it.
+export function snapDragDelta(startMin: number, deltaY: number, hourPx: number): number {
+  const snapped = snap15(startMin + (deltaY / hourPx) * 60);
+  return ((snapped - startMin) / 60) * hourPx;
 }
 
 export type LaidOutItem = { item: GuideItem; colIndex: number; colCount: number };

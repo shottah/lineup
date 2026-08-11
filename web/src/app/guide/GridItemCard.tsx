@@ -84,16 +84,18 @@ export function GridItemCard({
     ...(open
       ? { minHeight: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)`, zIndex: 30 }
       : { height: `max(calc(var(--hour-px) * ${spanFactor}), ${minItemPx}px)` }),
+    // Inline so it outranks every opacity class in the cascade — the
+    // watched treatment's focus-within:opacity-100 would otherwise win
+    // while the drag holds focus on the inner button.
+    ...(isDragging ? { opacity: 0.4 } : null),
   } as unknown as CSSProperties;
 
   return (
     <div
       ref={setNodeRef}
-      className={`guide-card group absolute rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,opacity] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${
+      className={`guide-card group absolute rounded-xl border-[hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.55)] border bg-[color-mix(in_srgb,hsl(var(--th)_var(--tint-s)_var(--tint-l))_7%,var(--color-panel))] transition-[box-shadow,opacity,translate] duration-200 ease-out hover:-translate-y-px focus-within:-translate-y-px hover:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] focus-within:shadow-[0_0_0_1px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.45),0_6px_18px_-6px_hsl(var(--th)_var(--tint-s)_var(--tint-l)/0.4)] ${
         open ? "z-30 overflow-visible" : "overflow-hidden"
-      } ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""} ${
-        isDragging ? "opacity-40" : ""
-      }`}
+      } ${watched ? "opacity-50 hover:opacity-100 focus-within:opacity-100" : ""}`}
       style={boxStyle}
     >
       <button
