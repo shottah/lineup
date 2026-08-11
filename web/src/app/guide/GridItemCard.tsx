@@ -68,9 +68,15 @@ export function GridItemCard({ guide, gridItem, columnDow, minItemPx, isPast }: 
       }`}
       style={boxStyle}
     >
+      {/* No aria-label: the button's accessible name is its full content
+          (title, episode, provider, Pinned), and dnd-kit's attributes add
+          the draggable role description. Past cards are disabled — an
+          enabled button would be an inert control announcing a false
+          affordance, since past items can't be dragged and have no click
+          action. */}
       <button
         type="button"
-        aria-label={`${title.name}, drag to reschedule`}
+        disabled={isPast}
         {...(isPast ? {} : listeners)}
         {...(isPast ? {} : attributes)}
         className={`block h-full w-full rounded-xl px-2.5 pt-[7px] pb-2 text-left text-ink ${

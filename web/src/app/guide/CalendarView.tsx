@@ -53,21 +53,40 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
 
   const dragM = useGuideItemDrag({ guideId: guide.id });
 
-  // Minutes since local midnight, ticking once a minute for the "now"
-  // line. Starts null (no line) so the server render and the client's
-  // first paint agree — the line appears in the mount effect, never
-  // during hydration.
-  const [nowMin, setNowMin] = useState<number | null>(null);
+  // The "now" clock: minutes since local midnight plus the local date
+  // (and yesterday's), ticking once a minute. The dates come from the
+  // client clock, NOT the server-rendered `today` prop — a tab left open
+  // past midnight must move the line to the new day's column, while the
+  // frozen prop keeps styling the header labels exactly as served.
+  // Starts null (no line) so the server render and the client's first
+  // paint agree — the line appears in the mount effect, never during
+  // hydration.
+  const [now, setNow] = useState<{ min: number; today: string; yesterday: string } | null>(null);
   useEffect(() => {
+    const localDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const tick = () => {
       const d = new Date();
-      setNowMin(d.getHours() * 60 + d.getMinutes());
+      const y = new Date(d);
+      y.setDate(d.getDate() - 1);
+      setNow({ min: d.getHours() * 60 + d.getMinutes(), today: localDate(d), yesterday: localDate(y) });
     };
     tick();
     const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const nowFactor = nowMin === null ? null : nowLineFactor(nowMin, grid.windowStart, grid.windowEnd);
+
+  // Which column carries the line, and where. Today's column gets the
+  // plain factor; for windows that run past midnight (windowEnd > 1440),
+  // the early-morning hours belong to YESTERDAY's column at nowMin +
+  // 1440 — at 00:15 under a window ending 02:00, "now" sits in the
+  // 24:15 row of the previous day.
+  const nowFactorFor = (date: string): number | null => {
+    if (now === null) return null;
+    if (date === now.today) return nowLineFactor(now.min, grid.windowStart, grid.windowEnd);
+    if (date === now.yesterday) return nowLineFactor(now.min + 1440, grid.windowStart, grid.windowEnd);
+    return null;
+  };
 
   // Mirrors the --hour-px CSS formula in JS (design spec §3) so the drag's
   // vertical pixel delta can be converted to minutes; CSS remains the
@@ -260,7 +279,7 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
               day={day}
               hourCount={grid.windowHours}
               minItemPx={MIN_ITEM_PX}
-              nowFactor={day.isToday ? nowFactor : null}
+              nowFactor={nowFactorFor(day.date)}
             />
           ))}
         </div>

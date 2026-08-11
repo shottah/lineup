@@ -216,15 +216,23 @@ describe("nowLineFactor", () => {
     expect(nowLineFactor(1170, 1080, 1440)).toBe(1.5);
   });
 
-  it("includes both window edges", () => {
+  it("includes the top edge but excludes the bottom edge", () => {
+    // At exactly windowEnd the rule would draw below the column body, so
+    // the bottom edge hides the line instead of overhanging it.
     expect(nowLineFactor(1080, 1080, 1440)).toBe(0);
-    expect(nowLineFactor(1440, 1080, 1440)).toBe(6);
+    expect(nowLineFactor(1440, 1080, 1440)).toBeNull();
   });
 
   it("returns null when now is outside the window", () => {
     expect(nowLineFactor(1079, 1080, 1440)).toBeNull();
     expect(nowLineFactor(1441, 1080, 1440)).toBeNull();
     expect(nowLineFactor(540, 1080, 1440)).toBeNull();
+  });
+
+  it("accepts past-midnight minutes for windows that cross midnight", () => {
+    // 00:15 in yesterday's column of an 18:00–26:00 window: the caller
+    // passes nowMin + 1440 = 1455.
+    expect(nowLineFactor(1455, 1080, 1560)).toBe(6.25);
   });
 });
 

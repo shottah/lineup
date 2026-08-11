@@ -204,8 +204,11 @@ export function dropStartMin(
 // Vertical position of the "now" line as hour-heights from the window
 // top (same unit as TimeGridItem.topFactor), or null when the current
 // time falls outside the grid's window and the line should not render.
+// The bottom edge is exclusive: at exactly windowEnd the rule would draw
+// below the column body. For windows that cross midnight (windowEnd >
+// 1440) the caller passes nowMin + 1440 when testing yesterday's column.
 export function nowLineFactor(nowMin: number, windowStart: number, windowEnd: number): number | null {
-  if (nowMin < windowStart || nowMin > windowEnd) return null;
+  if (nowMin < windowStart || nowMin >= windowEnd) return null;
   return (nowMin - windowStart) / 60;
 }
 

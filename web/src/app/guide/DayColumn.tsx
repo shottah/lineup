@@ -19,8 +19,10 @@ export type DayColumnProps = {
   minItemPx: number;
   // "Now" as hour-heights from the window top (nowLineFactor), or null
   // when the line shouldn't render in this column — CalendarView passes a
-  // value only for today's column, so the prop stays referentially stable
-  // (null) for the other six and doesn't defeat the memo below.
+  // value only for the column "now" belongs to (today, or yesterday for
+  // the past-midnight hours of a window that crosses 24:00), so the prop
+  // stays a stable null for the other columns and doesn't defeat the
+  // memo below.
   nowFactor: number | null;
 };
 
@@ -32,8 +34,8 @@ export type DayColumnProps = {
 // resolve `over` to a past column. Past days also get the pre-existing
 // dimmed/grayscale treatment, which doubles as the "locked" affordance.
 // Memoized so CalendarView's drag start/end and minute-tick state flips
-// don't re-render all seven columns (day/columns/handler props are all
-// stable).
+// don't re-render all seven columns (every prop is a primitive, a
+// memoized object, or null).
 export const DayColumn = memo(function DayColumn({ guide, day, hourCount, minItemPx, nowFactor }: DayColumnProps) {
   const gridlines = Array.from({ length: hourCount }, (_, i) => i);
   const { setNodeRef, isOver } = useDroppable({ id: day.date, disabled: day.isPast });
@@ -73,7 +75,7 @@ export const DayColumn = memo(function DayColumn({ guide, day, hourCount, minIte
 
         {day.items.map((gridItem) => (
           <GridItemCard
-            key={`${day.date}-${gridItem.item.id}`}
+            key={gridItem.item.id}
             guide={guide}
             gridItem={gridItem}
             columnDow={day.dow}
@@ -82,13 +84,16 @@ export const DayColumn = memo(function DayColumn({ guide, day, hourCount, minIte
           />
         ))}
 
-        {/* The "now" line (today's column only): sits above the cards so
-            it's readable across whatever event is airing right now, but
-            never intercepts the pointer. */}
+        {/* The "now" line: above the cards (z-auto) so it reads across
+            whatever is airing right now, but below the quick-actions
+            cluster (z-10) and the mobile sticky gutter (z-20) so it
+            never strikes through the hover pill or paints over the hour
+            labels during horizontal scroll. Never intercepts the
+            pointer. */}
         {nowFactor !== null && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 z-20"
+            className="pointer-events-none absolute inset-x-0 z-[5]"
             style={{ top: `calc(var(--hour-px) * ${nowFactor})` }}
           >
             <div className="relative border-t-2 border-acc">

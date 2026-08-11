@@ -17,12 +17,10 @@ export type UseGuideItemMutationsParams = {
   columnDow: string;
 };
 
-// Watched/Pin/Remove mutation configs shared by ItemMenu and
-// SlotQuickActions (same endpoints, toasts, and invalidations) so the
-// hover-shortcut cluster and the full menu stay behaviorally identical.
-// Each caller gets its own mutation instances — this shares config, not
-// mutation state — per the design addendum's "owns its own instances"
-// requirement (CalendarView only mounts one or the other at a time).
+// Watched/Pin/Remove mutation configs for SlotQuickActions (the card's
+// only action surface since ItemMenu's removal in #53) — kept as a hook
+// so the endpoints, toasts, and invalidations stay in one place for any
+// future action surface to reuse.
 export function useGuideItemMutations({ guideId, item, title, columnDow }: UseGuideItemMutationsParams) {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -54,5 +52,5 @@ export function useGuideItemMutations({ guideId, item, title, columnDow }: UseGu
     onSettled: invalidateGuide,
   });
 
-  return { show, invalidateGuide, itemPath, watchedM, pinM, removeM };
+  return { watchedM, pinM, removeM };
 }
