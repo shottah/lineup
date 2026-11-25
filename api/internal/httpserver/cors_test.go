@@ -72,7 +72,7 @@ func TestCORSPreflightDelete(t *testing.T) {
 
 func TestCORSActualRequestHeader(t *testing.T) {
 	srv := New(Deps{})
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "http://localhost:3001")
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
@@ -80,6 +80,6 @@ func TestCORSActualRequestHeader(t *testing.T) {
 		t.Fatalf("ACAO on actual request = %q, want origin echoed", got)
 	}
 	if rec.Code != http.StatusOK {
-		t.Fatalf("healthz with Origin = %d, want 200", rec.Code)
+		t.Fatalf("health with Origin = %d, want 200", rec.Code)
 	}
 }

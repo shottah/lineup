@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func TestHealthz(t *testing.T) {
+func TestHealth(t *testing.T) {
 	srv := New(Deps{})
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
 	if rec.Code != 200 {
