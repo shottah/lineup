@@ -17,7 +17,7 @@ type AppConfig = {
 const configs: Record<"development" | "production", AppConfig> = {
   development: {
     firebase: {
-      apiKey: "FILLED_IN_BY_RUNBOOK_STEP_3",
+      apiKey: "AIzaSyCu8psHRVilLw1OUTelbdnUm8AP1bhfhm0",
       authDomain: "lineup-app-ae6b.firebaseapp.com",
       projectId: "demo-lineup",
     },
@@ -27,7 +27,7 @@ const configs: Record<"development" | "production", AppConfig> = {
   },
   production: {
     firebase: {
-      apiKey: "FILLED_IN_BY_RUNBOOK_STEP_3",
+      apiKey: "AIzaSyCu8psHRVilLw1OUTelbdnUm8AP1bhfhm0",
       authDomain: "lineup-app-ae6b.firebaseapp.com",
       projectId: "lineup-app-ae6b",
     },

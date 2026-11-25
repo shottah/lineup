@@ -19,6 +19,6 @@ gcloud iam service-accounts describe api-runtime@"$PROJECT_ID".iam.gserviceaccou
   gcloud iam service-accounts create api-runtime --project "$PROJECT_ID"
 for role in roles/secretmanager.secretAccessor roles/datastore.user; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:api-runtime@$PROJECT_ID.iam.gserviceaccount.com" --role="$role" -q >/dev/null
+    --member="serviceAccount:api-runtime@$PROJECT_ID.iam.gserviceaccount.com" --role="$role" --condition=None -q >/dev/null
 done
 echo "Bootstrap complete for $PROJECT_ID"

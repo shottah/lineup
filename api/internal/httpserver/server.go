@@ -34,6 +34,8 @@ func New(d Deps) *http.Server {
 			"http://localhost:3001",
 			"https://lineup-app-ae6b.web.app",
 			"https://lineup-app-ae6b.firebaseapp.com",
+			// Firebase App Hosting backend "lineup" (web/).
+			"https://lineup--lineup-app-ae6b.us-central1.hosted.app",
 		},
 		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Authorization", "Content-Type"},

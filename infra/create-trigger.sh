@@ -57,7 +57,7 @@ echo "deploy execution SA: $EXEC_SA"
 for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer \
             roles/clouddeploy.releaser; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:${BUILD_SA}" --role="$role" -q >/dev/null
+    --member="serviceAccount:${BUILD_SA}" --role="$role" --condition=None -q >/dev/null
 done
 
 # EXEC_SA runs the Cloud Deploy render/deploy jobs:
@@ -71,7 +71,7 @@ done
 #                             only run.admin carries it.
 for role in roles/clouddeploy.jobRunner roles/run.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:${EXEC_SA}" --role="$role" -q >/dev/null
+    --member="serviceAccount:${EXEC_SA}" --role="$role" --condition=None -q >/dev/null
 done
 
 # actAs chain:
@@ -93,7 +93,7 @@ echo "== 3. GitHub connection (2nd-gen) =="
 # after the connection reaches installationState COMPLETE -- see the manual-steps
 # checklist in infra/README.md.
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CLOUDBUILD_P4SA}" --role=roles/secretmanager.admin -q >/dev/null
+  --member="serviceAccount:${CLOUDBUILD_P4SA}" --role=roles/secretmanager.admin --condition=None -q >/dev/null
 
 if ! gcloud builds connections describe "$CONNECTION_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
@@ -133,6 +133,9 @@ if ! gcloud builds repositories describe "$REPO_ID" --connection="$CONNECTION_NA
 fi
 
 echo "== 5. Build trigger =="
+# Fires on API code and on the build/runtime config the pipeline reads, so a
+# change to run-service.yaml (env, scaling) deploys too. clouddeploy.yaml is
+# excluded: pipeline changes take effect via `gcloud deploy apply`, not a build.
 if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud builds triggers create github \
@@ -140,7 +143,7 @@ if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --region="$REGION" \
     --repository="projects/${PROJECT_ID}/locations/${REGION}/connections/${CONNECTION_NAME}/repositories/${REPO_ID}" \
     --branch-pattern='^main$' \
-    --included-files='api/**' \
+    --included-files='api/**,infra/cloudbuild.yaml,infra/run-service.yaml,infra/skaffold.yaml' \
     --build-config=infra/cloudbuild.yaml \
     --project="$PROJECT_ID" -q
 fi

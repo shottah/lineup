@@ -22,6 +22,8 @@ func TestCORSPreflight(t *testing.T) {
 		{"localhost 3000 allowed", "http://localhost:3000", true},
 		{"hosted web.app allowed", "https://lineup-app-ae6b.web.app", true},
 		{"hosted firebaseapp.com allowed", "https://lineup-app-ae6b.firebaseapp.com", true},
+		{"app hosting backend allowed", "https://lineup--lineup-app-ae6b.us-central1.hosted.app", true},
+		{"other hosted.app backend rejected", "https://evil--other-project.us-central1.hosted.app", false},
 		{"unknown origin rejected", "https://evil.example.com", false},
 	}
 	for _, tc := range cases {
