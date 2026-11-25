@@ -15,7 +15,7 @@ import { GENERIC_ERROR } from "./useGuideItemMutations";
 // itself isn't unit-testable in this project's node test environment.
 export function moveItemInGuide(
   guide: GuideResponse,
-  itemId: number,
+  itemId: string,
   date: string,
   startMin: number,
 ): GuideResponse {
@@ -30,11 +30,11 @@ export function moveItemInGuide(
 }
 
 export type UseGuideItemDragParams = {
-  guideId: number;
+  guideId: string;
 };
 
 export type DragMoveVars = {
-  itemId: number;
+  itemId: string;
   date: string;
   startMin: number;
 };
@@ -52,7 +52,7 @@ export function useGuideItemDrag({ guideId }: UseGuideItemDragParams) {
 
   return useMutation({
     mutationFn: ({ itemId, date, startMin }: DragMoveVars) =>
-      api(`/v1/guides/${guideId}/items/${itemId}`, {
+      api(`/v1/guides/${encodeURIComponent(guideId)}/items/${encodeURIComponent(itemId)}`, {
         method: "PATCH",
         body: JSON.stringify({ date, start_min: startMin }),
       }),

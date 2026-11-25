@@ -110,7 +110,7 @@ export type BoardCell =
       title: GuideTitleLookup;
       sub: string;
       step: number | null;
-      swapTargetId?: number;
+      swapTargetId?: string;
     };
 
 export type BoardRow = { providerId: number; providerName: string; cells: BoardCell[] };
@@ -235,7 +235,7 @@ export function layoutDayColumns(items: GuideItem[]): LaidOutItem[] {
       (a, b) =>
         a.start_min - b.start_min ||
         b.end_min - b.start_min - (a.end_min - a.start_min) ||
-        a.id - b.id,
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
   const out: LaidOutItem[] = [];
   let cluster: GuideItem[] = [];

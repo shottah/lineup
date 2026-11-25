@@ -17,15 +17,15 @@ const SAMPLE_SIZE = "w92" as const;
 
 // --- §2.4 Deterministic fallback ---------------------------------------
 
-// Knuth multiplicative hash: (title_id * 2654435761) % 360. Done in
-// BigInt because title_id * 2654435761 exceeds Number's 2^53 safe-integer
-// range for title_ids past ~3.4M — BigInt keeps the modulo exact
-// regardless of title_id's magnitude; the result (0–359) always fits
-// back into a plain Number.
-export function hashHue(titleId: number): number {
-  // BigInt() calls, not `n` literals — the project's ES2017 build target
-  // doesn't support BigInt literal syntax.
-  return Number((BigInt(titleId) * BigInt(2654435761)) % BigInt(360));
+// FNV-1a 32-bit over the UTF-8 bytes of the title id, mod 360. Title ids
+// are strings (e.g. "series-1399").
+export function hashHue(titleId: string): number {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(titleId)) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % 360;
 }
 
 // --- §2.3 steps 3–6: pixel → hue color math (pure, DOM-free) ------------
@@ -269,7 +269,7 @@ function peekCached<K, V>(store: ResolutionStore<K, V>, key: K): V | null {
 
 // Module-level, in-memory, keyed by title_id (not poster_path — every
 // card for the same title across the week shares one color).
-const posterHueStore = createStore<number, number>();
+const posterHueStore = createStore<string, number>();
 
 // Resolves the poster-derived hue for a title. On any failure (missing
 // poster_path, load error, decode error, or too little color signal —
@@ -277,7 +277,7 @@ const posterHueStore = createStore<number, number>();
 // `extract` is injectable (defaults to the real canvas sampler) so this
 // orchestration is testable without a browser.
 export async function posterHue(
-  titleId: number,
+  titleId: string,
   posterPath: string,
   extract: (url: string) => Promise<number> = samplePosterHue,
 ): Promise<number> {
@@ -288,7 +288,7 @@ export async function posterHue(
 
 // Spec's zero-flash pattern: hash-first synchronously, silent canvas
 // upgrade once `posterHue` resolves.
-export function peekPosterHue(titleId: number): number | null {
+export function peekPosterHue(titleId: string): number | null {
   return peekCached(posterHueStore, titleId);
 }
 

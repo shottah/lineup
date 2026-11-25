@@ -31,7 +31,7 @@ function titleCase(dow: string): string {
   return dow.charAt(0) + dow.slice(1).toLowerCase();
 }
 
-type SwapVars = { targetId: number; titleId: number; titleName: string };
+type SwapVars = { targetId: string; titleId: string; titleName: string };
 
 // The TV-guide board: day chips over a provider x hour grid for one
 // selected date (toBoardRows(guide, date)). Plan cells (the evening's
@@ -53,7 +53,7 @@ export function BoardView({ guide, today }: { guide: GuideResponse; today: strin
 
   const swapM = useMutation({
     mutationFn: (vars: SwapVars) =>
-      api(`/v1/guides/${guide.id}/items/${vars.targetId}`, {
+      api(`/v1/guides/${encodeURIComponent(guide.id)}/items/${encodeURIComponent(vars.targetId)}`, {
         method: "PATCH",
         body: JSON.stringify({ title_id: vars.titleId }),
       }),

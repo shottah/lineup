@@ -1,4 +1,4 @@
-// Mirrors the API's /v1/me JSON exactly (see api/internal/store/users.go
+// Mirrors the API's /v1/me JSON exactly (see api/internal/docstore/users.go
 // JSON tags and api/internal/prefs — do not rename fields client-side).
 
 export type DayWindow = {
@@ -12,7 +12,7 @@ export type SchedulePrefs = {
 };
 
 export type User = {
-  id: number;
+  id: string;
   email: string;
   display_name: string;
   region: string;
@@ -20,7 +20,7 @@ export type User = {
 };
 
 // --- Search + title pages (#16). Mirrors /v1/search and /v1/titles JSON
-// (see api/internal/httpserver/titles.go and api/internal/store/titles.go
+// (see api/internal/httpserver/titles.go and api/internal/docstore/titles.go
 // JSON tags — do not rename fields client-side).
 
 export type SearchResult = {
@@ -37,7 +37,7 @@ export type SearchResponse = {
 };
 
 export type Title = {
-  id: number;
+  id: string;
   tmdb_id: number;
   kind: "movie" | "series";
   name: string;
@@ -66,7 +66,7 @@ export type Pointer = {
 export type EntryStatus = "none" | "watchlist" | "rotation" | "watched";
 
 export type Entry = {
-  title_id: number;
+  title_id: string;
   tmdb_id: number;
   kind: "movie" | "series";
   name: string;
@@ -99,11 +99,11 @@ export type ShelfResponse = {
 // --- Guide (#18). Mirrors /v1/guides JSON incl. the sidecar maps.
 
 export type GuideItem = {
-  id: number;
+  id: string;
   date: string; // "YYYY-MM-DD"
   start_min: number; // minutes from midnight
   end_min: number;
-  title_id: number;
+  title_id: string;
   season: number;
   episode: number;
   provider_id: number;
@@ -121,7 +121,7 @@ export type GuideTitleLookup = {
 };
 
 export type GuideResponse = {
-  id: number;
+  id: string;
   start_date: string;
   end_date: string;
   seed: number; // UnixNano exceeds 2^53; JSON parsing truncates it. Display/echo only — never round-trip.

@@ -41,7 +41,7 @@ type AiredEpisode struct {
 
 // Title is a fully hydrated rotation entry.
 type Title struct {
-	ID             int64
+	ID             string
 	Kind           string // "movie" | "series"
 	Name           string
 	Runtime        int // minutes
@@ -58,7 +58,7 @@ type Item struct {
 	Date     string
 	StartMin int
 	EndMin   int
-	TitleID  int64
+	TitleID  string
 	Season   int
 	Episode  int
 	Provider int64
@@ -89,7 +89,7 @@ type dayState struct {
 	date      string
 	window    Window
 	nextMin   int
-	series    map[int64]bool
+	series    map[string]bool
 	providers map[int64]bool
 }
 
@@ -100,13 +100,13 @@ func (ds *dayState) enabled() bool  { return ds.window != Window{} }
 type engine struct {
 	rng         *rand.Rand
 	titles      []Title
-	byID        map[int64]*Title
-	air         map[int64]map[epKey]string
+	byID        map[string]*Title
+	air         map[string]map[epKey]string
 	days        []*dayState
 	dayByDate   map[string]*dayState
-	placedEps   map[int64]map[epKey]bool
-	placedCount map[int64]int
-	moviePlaced map[int64]bool
+	placedEps   map[string]map[epKey]bool
+	placedCount map[string]int
+	moviePlaced map[string]bool
 	out         []Item
 }
 
@@ -115,12 +115,12 @@ type engine struct {
 func Generate(in Input) []Item {
 	e := &engine{
 		rng:         rand.New(rand.NewSource(in.Seed)),
-		byID:        map[int64]*Title{},
-		air:         map[int64]map[epKey]string{},
+		byID:        map[string]*Title{},
+		air:         map[string]map[epKey]string{},
 		dayByDate:   map[string]*dayState{},
-		placedEps:   map[int64]map[epKey]bool{},
-		placedCount: map[int64]int{},
-		moviePlaced: map[int64]bool{},
+		placedEps:   map[string]map[epKey]bool{},
+		placedCount: map[string]int{},
+		moviePlaced: map[string]bool{},
 	}
 
 	e.titles = make([]Title, len(in.Titles))
@@ -145,7 +145,7 @@ func Generate(in Input) []Item {
 
 	for _, d := range in.Days {
 		ds := &dayState{date: d.Date, window: d.Window, nextMin: d.Window.StartMin,
-			series: map[int64]bool{}, providers: map[int64]bool{}}
+			series: map[string]bool{}, providers: map[int64]bool{}}
 		e.days = append(e.days, ds)
 		e.dayByDate[d.Date] = ds
 	}
@@ -173,7 +173,7 @@ func Generate(in Input) []Item {
 	return e.out
 }
 
-func (e *engine) markPlaced(titleID int64, k epKey) {
+func (e *engine) markPlaced(titleID string, k epKey) {
 	if e.placedEps[titleID] == nil {
 		e.placedEps[titleID] = map[epKey]bool{}
 	}

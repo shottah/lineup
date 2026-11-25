@@ -57,7 +57,7 @@ func TestGetMe(t *testing.T) {
 		t.Fatalf("GET /v1/me = %d, body %s", rec.Code, rec.Body.String())
 	}
 	var u struct {
-		ID            int64           `json:"id"`
+		ID            string          `json:"id"`
 		Email         string          `json:"email"`
 		Region        string          `json:"region"`
 		SchedulePrefs json.RawMessage `json:"schedule_prefs"`
@@ -65,14 +65,11 @@ func TestGetMe(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &u); err != nil {
 		t.Fatalf("GET /v1/me body not JSON: %v", err)
 	}
-	if u.Email != "one@example.com" || u.Region != "US" {
+	if u.ID != "uid-1" || u.Email != "one@example.com" || u.Region != "US" {
 		t.Fatalf("GET /v1/me = %+v", u)
 	}
 	if !strings.Contains(string(u.SchedulePrefs), `"19:00"`) {
 		t.Fatalf("first sign-in did not get default prefs: %s", u.SchedulePrefs)
-	}
-	if strings.Contains(rec.Body.String(), "uid-1") {
-		t.Fatalf("response leaks firebase uid: %s", rec.Body.String())
 	}
 }
 

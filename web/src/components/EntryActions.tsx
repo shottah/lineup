@@ -44,7 +44,7 @@ export function EntryActions({
 
   const mutation = useMutation({
     mutationFn: (patch: EntryPatch) =>
-      api<Entry>(`/v1/titles/${title.id}/entry`, {
+      api<Entry>(`/v1/titles/${encodeURIComponent(title.id)}/entry`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),

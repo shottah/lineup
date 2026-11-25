@@ -10,11 +10,9 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/shottah/lineup/api/internal/fbauth"
-	"github.com/shottah/lineup/api/internal/store"
 )
 
 type Deps struct {
-	Store    *store.Store
 	Users    UserStore
 	Verifier fbauth.TokenVerifier
 	Entries  EntryStore

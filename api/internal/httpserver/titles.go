@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/ingest"
-	"github.com/shottah/lineup/api/internal/store"
 	"github.com/shottah/lineup/api/internal/tmdb"
 )
 
@@ -22,12 +22,12 @@ type SearchClient interface {
 
 // Ingester is the slice of *ingest.Service the title handler needs.
 type Ingester interface {
-	EnsureTitle(ctx context.Context, kind string, tmdbID int64, region string) (*store.Title, error)
+	EnsureTitle(ctx context.Context, kind string, tmdbID int64, region string) (*docstore.Title, error)
 }
 
-// TitleReader is the slice of *store.Store the title handler needs.
+// TitleReader is the slice of *docstore.Store the title handler needs.
 type TitleReader interface {
-	GetTitleFull(ctx context.Context, userID, titleID int64, region string) (*store.TitleFull, error)
+	GetTitleFull(ctx context.Context, userID, titleID, region string) (*docstore.TitleFull, error)
 }
 
 // searchResult is the /v1/search wire shape (snake_case like every other

@@ -5,7 +5,7 @@ import "testing"
 // envKeys lists every environment variable Load reads. Each test case sets
 // all of them explicitly (to "" when absent from its env map) so cases
 // can't leak state from the outer test environment.
-var envKeys = []string{"DATABASE_URL", "TMDB_READ_TOKEN", "FIREBASE_PROJECT_ID", "PORT"}
+var envKeys = []string{"TMDB_READ_TOKEN", "FIREBASE_PROJECT_ID", "PORT"}
 
 func TestLoad(t *testing.T) {
 	tests := []struct {
@@ -15,35 +15,25 @@ func TestLoad(t *testing.T) {
 		want    Config
 	}{
 		{
-			name:    "missing DATABASE_URL errors",
+			name:    "missing FIREBASE_PROJECT_ID errors",
 			env:     map[string]string{},
 			wantErr: true,
 		},
 		{
 			name: "required vars only, other fields default to empty",
 			env: map[string]string{
-				"DATABASE_URL":        "postgres://localhost/db",
 				"FIREBASE_PROJECT_ID": "proj-id",
 			},
-			want: Config{DatabaseURL: "postgres://localhost/db", FirebaseProjectID: "proj-id"},
-		},
-		{
-			name: "missing FIREBASE_PROJECT_ID errors",
-			env: map[string]string{
-				"DATABASE_URL": "postgres://localhost/db",
-			},
-			wantErr: true,
+			want: Config{FirebaseProjectID: "proj-id"},
 		},
 		{
 			name: "all fields set",
 			env: map[string]string{
-				"DATABASE_URL":        "postgres://localhost/db",
 				"TMDB_READ_TOKEN":     "tmdb-token",
 				"FIREBASE_PROJECT_ID": "proj-id",
 				"PORT":                "9090",
 			},
 			want: Config{
-				DatabaseURL:       "postgres://localhost/db",
 				TMDBReadToken:     "tmdb-token",
 				FirebaseProjectID: "proj-id",
 				Port:              "9090",

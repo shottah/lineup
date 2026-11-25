@@ -6,18 +6,17 @@ import (
 	"errors"
 	"math"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shottah/lineup/api/internal/store"
+	"github.com/shottah/lineup/api/internal/docstore"
 )
 
-// EntryStore is the slice of *store.Store the shelf/entry handlers need.
+// EntryStore is the slice of *docstore.Store the shelf/entry handlers need.
 type EntryStore interface {
-	UpsertEntry(ctx context.Context, userID, titleID int64, u store.EntryUpdate) (*store.Entry, error)
-	CountRotation(ctx context.Context, userID, excludeTitleID int64) (int, error)
-	Shelf(ctx context.Context, userID int64, shelf string) ([]store.Entry, error)
+	UpsertEntry(ctx context.Context, userID, titleID string, u docstore.EntryUpdate) (*docstore.Entry, error)
+	CountRotation(ctx context.Context, userID, excludeTitleID string) (int, error)
+	Shelf(ctx context.Context, userID, shelf string) ([]docstore.Entry, error)
 }
 
 // rotationCap was 8 in the v1 design spec; raised to 10 (issue #41).
@@ -27,8 +26,8 @@ var validStatuses = map[string]bool{"none": true, "watchlist": true, "rotation":
 
 var validShelves = map[string]bool{"watchlist": true, "rotation": true, "watched": true, "favorites": true, "ratings": true}
 
-// validRating reports whether v is a half-step in [0.5, 5.0]. The DB CHECK
-// covers the range; half-step granularity is API policy.
+// validRating reports whether v is a half-step in [0.5, 5.0]. Firestore has
+// no CHECK constraint, so this is the only range and granularity guard.
 func validRating(v float64) bool {
 	d := v * 2
 	return v >= 0.5 && v <= 5.0 && d == math.Trunc(d)
@@ -36,16 +35,16 @@ func validRating(v float64) bool {
 
 func handlePatchEntry(entries EntryStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		titleID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-		if err != nil || titleID < 1 {
+		titleID, ok := pathID(r, "id")
+		if !ok {
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		}
 		var body struct {
-			Status   *string         `json:"status"`
-			Rating   json.RawMessage `json:"rating"`
-			Favorite *bool           `json:"favorite"`
-			Pointer  *store.Pointer  `json:"pointer"`
+			Status   *string           `json:"status"`
+			Rating   json.RawMessage   `json:"rating"`
+			Favorite *bool             `json:"favorite"`
+			Pointer  *docstore.Pointer `json:"pointer"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "malformed json")
@@ -59,7 +58,7 @@ func handlePatchEntry(entries EntryStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusUnprocessableEntity, "invalid status")
 			return
 		}
-		u := store.EntryUpdate{Status: body.Status, Favorite: body.Favorite, Pointer: body.Pointer}
+		u := docstore.EntryUpdate{Status: body.Status, Favorite: body.Favorite, Pointer: body.Pointer}
 		if body.Rating != nil {
 			if string(body.Rating) == "null" {
 				u.ClearRating = true
@@ -96,7 +95,7 @@ func handlePatchEntry(entries EntryStore) http.HandlerFunc {
 
 		e, err := entries.UpsertEntry(r.Context(), user.ID, titleID, u)
 		switch {
-		case errors.Is(err, store.ErrTitleNotFound):
+		case errors.Is(err, docstore.ErrTitleNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -122,6 +121,6 @@ func handleGetShelf(entries EntryStore) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string][]store.Entry{"entries": list})
+		json.NewEncoder(w).Encode(map[string][]docstore.Entry{"entries": list})
 	}
 }
