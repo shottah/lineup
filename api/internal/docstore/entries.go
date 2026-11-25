@@ -99,7 +99,7 @@ func (s *Store) UpsertEntry(ctx context.Context, userID, titleID string, u Entry
 		if err != nil && !isNotFound(err) {
 			return err
 		}
-		now := time.Now().UTC()
+		now := now()
 		var d entryDoc
 		if err == nil {
 			if err := esnap.DataTo(&d); err != nil {

@@ -139,7 +139,7 @@ func (s *Store) UpsertTitle(ctx context.Context, u TitleUpsert) (*Title, error) 
 		}
 		d.Name, d.Overview, d.PosterPath = u.Name, u.Overview, u.PosterPath
 		d.RuntimeMinutes, d.Airing = u.RuntimeMinutes, u.Airing
-		d.RefreshedAt = time.Now().UTC()
+		d.RefreshedAt = now()
 		if err := tx.Set(ref, &d); err != nil {
 			return err
 		}
@@ -282,7 +282,7 @@ func (s *Store) ReplaceProviders(ctx context.Context, titleID, region string, pr
 			all[region] = ids
 			return []firestore.Update{
 				{Path: "providers", Value: all},
-				{Path: "providersRefreshedAt", Value: time.Now().UTC()},
+				{Path: "providersRefreshedAt", Value: now()},
 			}, nil
 		})
 }
@@ -315,7 +315,7 @@ func (s *Store) ReplaceFutureAirings(ctx context.Context, titleID, today string,
 			})
 			return []firestore.Update{
 				{Path: "airings", Value: out},
-				{Path: "airingsRefreshedAt", Value: time.Now().UTC()},
+				{Path: "airingsRefreshedAt", Value: now()},
 			}, nil
 		})
 }

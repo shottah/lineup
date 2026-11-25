@@ -238,7 +238,7 @@ func (s *Store) CreateGuideReplacingOverlaps(ctx context.Context, userID, startD
 		}
 		ref := col.NewDoc()
 		d := guideDoc{StartDate: startDate, EndDate: endDate, Seed: seed,
-			CreatedAt: time.Now().UTC(), Items: []guideItemDoc{}}
+			CreatedAt: now(), Items: []guideItemDoc{}}
 		appendNewItems(&d, items)
 		if err := tx.Create(ref, &d); err != nil {
 			return err
