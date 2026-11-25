@@ -24,26 +24,23 @@ If the project is being re-created under a new project id, run these in order:
    The script detects the currently-targeted id from `clouddeploy.yaml`, so it is
    the single source of truth. It warns about any remaining occurrences elsewhere
    under `infra/` for manual review.
-1. `bash infra/bootstrap.sh <NEW_PROJECT_ID> <BILLING_ACCOUNT_ID>` (project, APIs, repo, secrets, SA)
+1. `bash infra/bootstrap.sh <NEW_PROJECT_ID> <BILLING_ACCOUNT_ID>` (project, APIs, Firestore, repo, secrets, SA)
 2. `gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project <NEW_PROJECT_ID>` then `bash infra/create-trigger.sh` (pipeline, IAM, trigger)
 
-> **Database migration in progress.** The self-hosted Postgres VM (`lineup-db`)
-> and its firewall rules and backup bucket were retired on 2026-11-25. The API
-> is moving to Cloud Firestore; until that cutover lands, `run-service.yaml`
-> still references the legacy `database-url` secret and new API revisions fail
-> at boot.
+3. `firebase deploy --only firestore --project <NEW_PROJECT_ID>` (deploys the deny-all `firestore.rules`)
 
 ## What `bootstrap.sh` provisions
 
 Running the script against the project ID above (idempotent — safe to re-run):
 
 - Creates the GCP project (if it doesn't already exist) and links it to the given billing account
-- Enables the required APIs: Cloud Run, Cloud Build, Cloud Deploy, Artifact Registry, Secret Manager, Compute Engine, Firebase, Identity Toolkit, Firebase App Hosting
+- Enables the required APIs: Cloud Run, Cloud Build, Cloud Deploy, Artifact Registry, Secret Manager, Compute Engine, Firebase, Identity Toolkit, Firebase App Hosting, Firestore
 - Creates an Artifact Registry Docker repo named `api` in `us-central1`
 - Creates a Secret Manager secret:
   - `tmdb-read-token` — placeholder value `REPLACE_ME` (see manual step below)
+- Creates the Cloud Firestore `(default)` database (Native mode, `us-central1`) if it doesn't exist
 - Creates a service account `api-runtime@<PROJECT_ID>.iam.gserviceaccount.com`
-- Grants `api-runtime@` the `roles/secretmanager.secretAccessor` role at the project level
+- Grants `api-runtime@` the `roles/secretmanager.secretAccessor` and `roles/datastore.user` roles at the project level
 
 ## Running it
 

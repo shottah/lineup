@@ -25,14 +25,6 @@ spec:
           env:
             - name: FIREBASE_PROJECT_ID
               value: "lineup-app-ae6b"
-            # Transitional: the Postgres VM is retired and the API is moving to
-            # Firestore. This env var (and the database-url secret) is removed in
-            # the Firestore cutover; until then new revisions fail at boot.
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: database-url
-                  key: "latest"
             - name: TMDB_READ_TOKEN
               valueFrom:
                 secretKeyRef:
