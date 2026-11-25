@@ -71,6 +71,23 @@ func (s *Store) UpsertUserByFirebaseUID(ctx context.Context, uid, email, display
 		return nil, fmt.Errorf("docstore: upsert user: default prefs: %w", err)
 	}
 	ref := s.c.Collection("users").Doc(uid)
+	// Fast path: this runs on every authenticated request, so avoid a
+	// transaction when the stored doc needs no refresh.
+	if snap, gerr := ref.Get(ctx); gerr == nil {
+		var d userDoc
+		if err := snap.DataTo(&d); err != nil {
+			return nil, fmt.Errorf("docstore: upsert user: %w", err)
+		}
+		if (email == "" || email == d.Email) && (displayName == "" || displayName == d.DisplayName) {
+			u, err := d.user(uid)
+			if err != nil {
+				return nil, fmt.Errorf("docstore: upsert user: %w", err)
+			}
+			return u, nil
+		}
+	} else if !isNotFound(gerr) {
+		return nil, fmt.Errorf("docstore: upsert user: %w", gerr)
+	}
 	var out *User
 	err = s.c.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		snap, err := tx.Get(ref)

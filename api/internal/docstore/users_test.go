@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestUpsertUserByFirebaseUID(t *testing.T) {
@@ -194,5 +195,43 @@ func TestUpsertUserByFirebaseUIDConcurrentFirstLogin(t *testing.T) {
 	}
 	if d.CreatedAt.After(d.UpdatedAt) {
 		t.Fatalf("createdAt %v after updatedAt %v", d.CreatedAt, d.UpdatedAt)
+	}
+}
+
+// TestUpsertUserUnchangedDoesNotWrite: a sign-in that changes nothing must
+// return the stored user without touching updatedAt.
+func TestUpsertUserUnchangedDoesNotWrite(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := uniqueUID(t)
+	defaults := json.RawMessage(`{"windows":{}}`)
+	if _, err := s.UpsertUserByFirebaseUID(ctx, uid, "a@example.com", "Ada", defaults); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	updatedAt := func() time.Time {
+		snap, err := s.c.Collection("users").Doc(uid).Get(ctx)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		var d userDoc
+		if err := snap.DataTo(&d); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return d.UpdatedAt
+	}
+	before := updatedAt()
+	time.Sleep(20 * time.Millisecond)
+	// Same values, plus blank values that must not blank stored ones.
+	for _, in := range [][2]string{{"a@example.com", "Ada"}, {"", "Ada"}, {"a@example.com", ""}, {"", ""}} {
+		u, err := s.UpsertUserByFirebaseUID(ctx, uid, in[0], in[1], defaults)
+		if err != nil {
+			t.Fatalf("unchanged upsert %v: %v", in, err)
+		}
+		if u.Email != "a@example.com" || u.DisplayName != "Ada" {
+			t.Fatalf("unchanged upsert %v = %+v", in, u)
+		}
+	}
+	if after := updatedAt(); !after.Equal(before) {
+		t.Fatalf("updatedAt changed on unchanged upsert: %v -> %v", before, after)
 	}
 }

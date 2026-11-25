@@ -39,7 +39,7 @@ type replaceCall struct {
 
 // fakeGuides implements GuideStore in memory, recording call args so tests
 // can assert what the handlers passed downstream. It mirrors just enough of
-// store/guides.go's semantics for the flows under test; full behavior lives
+// docstore's guide semantics for the flows under test; full behavior lives
 // in the docstore emulator tests.
 type fakeGuides struct {
 	titles []guide.Title
@@ -156,7 +156,7 @@ func (f *fakeGuides) ReplaceUnkeptItems(_ context.Context, userID, guideID strin
 }
 
 // GuideLookups derives sidecar maps from the items of the guide being
-// rendered (#18), mirroring just enough of the real store method's shape for
+// rendered (#18), mirroring just enough of the real docstore method's shape for
 // handler tests: every item's title/provider id resolves to a non-empty
 // fixture entry.
 func (f *fakeGuides) GuideLookups(_ context.Context, items []docstore.GuideItem) (map[string]docstore.TitleLookup, map[int64]docstore.ProviderRow, error) {
@@ -253,7 +253,7 @@ func (f *fakeGuides) MarkItemWatched(_ context.Context, userID, guideID, itemID 
 
 // UnmarkItemWatched mirrors just the route/status wiring the handler test
 // needs (fake, not real reversal semantics — those are covered by the
-// store's DB-backed TestUnmarkItemWatched).
+// docstore's emulator-backed TestUnmarkItemWatched).
 func (f *fakeGuides) UnmarkItemWatched(_ context.Context, userID, guideID, itemID string) (*docstore.GuideItem, error) {
 	owner, ok := f.items[itemKey{guideID, itemID}]
 	if !ok || owner != userID {
@@ -650,7 +650,7 @@ func TestPatchItem(t *testing.T) {
 		}
 	})
 
-	// TestUpdateGuideItemPastMove (store package) covers the actual
+	// TestUpdateGuideItemPastMove (docstore package) covers the actual
 	// enforcement; here we only assert the handler maps docstore.ErrPastMove
 	// to a 422 with the documented error body.
 	t.Run("past move rejected", func(t *testing.T) {

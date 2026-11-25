@@ -1,4 +1,4 @@
-// Mirrors the API's /v1/me JSON exactly (see api/internal/store/users.go
+// Mirrors the API's /v1/me JSON exactly (see api/internal/docstore/users.go
 // JSON tags and api/internal/prefs — do not rename fields client-side).
 
 export type DayWindow = {
@@ -20,7 +20,7 @@ export type User = {
 };
 
 // --- Search + title pages (#16). Mirrors /v1/search and /v1/titles JSON
-// (see api/internal/httpserver/titles.go and api/internal/store/titles.go
+// (see api/internal/httpserver/titles.go and api/internal/docstore/titles.go
 // JSON tags — do not rename fields client-side).
 
 export type SearchResult = {

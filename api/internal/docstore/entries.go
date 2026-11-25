@@ -2,6 +2,7 @@ package docstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -132,7 +133,7 @@ func (s *Store) UpsertEntry(ctx context.Context, userID, titleID string, u Entry
 		out = d.entry(&td)
 		return nil
 	})
-	if err == ErrTitleNotFound {
+	if errors.Is(err, ErrTitleNotFound) {
 		return nil, ErrTitleNotFound
 	}
 	if err != nil {

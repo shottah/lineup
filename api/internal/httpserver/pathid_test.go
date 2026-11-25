@@ -13,8 +13,8 @@ import (
 // 404 before reaching the store. The fakes deliberately know those IDs, so a
 // missing guard would surface as a 2xx rather than a coincidental 404.
 func TestPathIDRejectsInvalid(t *testing.T) {
-	bad := []string{"__x__", "a%2Fb"}
-	known := []string{"__x__", "a/b", "a%2Fb", "ok"}
+	bad := []string{"__x__", "a%2Fb", "%2E%2E", "%2E"}
+	known := []string{"__x__", "a/b", "a%2Fb", "..", ".", "ok"}
 
 	fe := newFakeEntries(known...)
 	fg := newFakeGuides()
