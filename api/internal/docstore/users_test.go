@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -147,5 +148,51 @@ func TestUpdateUserPrefsMissingUser(t *testing.T) {
 	snap, err := s.c.Collection("users").Doc("no-such-user").Get(ctx)
 	if err == nil && snap.Exists() {
 		t.Fatal("missing user doc was created")
+	}
+}
+
+func TestUpsertUserByFirebaseUIDConcurrentFirstLogin(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	uid := uniqueUID(t)
+	defaults := json.RawMessage(`{"windows":{}}`)
+
+	const n = 10
+	users := make([]*User, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			users[i], errs[i] = s.UpsertUserByFirebaseUID(ctx, uid, "a@example.com", "Ada", defaults)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Fatalf("upsert %d: %v", i, errs[i])
+		}
+		if users[i].ID != uid || users[i].Email != "a@example.com" || users[i].Region != "US" {
+			t.Fatalf("upsert %d = %+v", i, users[i])
+		}
+	}
+	snap, err := s.c.Collection("users").Doc(uid).Get(ctx)
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	var d userDoc
+	if err := snap.DataTo(&d); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if d.Email != "a@example.com" || d.DisplayName != "Ada" || d.Region != "US" || d.CreatedAt.IsZero() {
+		t.Fatalf("stored doc = %+v", d)
+	}
+	if d.CreatedAt.After(d.UpdatedAt) {
+		t.Fatalf("createdAt %v after updatedAt %v", d.CreatedAt, d.UpdatedAt)
 	}
 }
