@@ -6,30 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/guide"
 	"github.com/shottah/lineup/api/internal/prefs"
-	"github.com/shottah/lineup/api/internal/store"
 )
 
-// GuideStore is the slice of *store.Store the guide handlers need.
+// GuideStore is the slice of *docstore.Store the guide handlers need.
 type GuideStore interface {
-	GuideInputTitles(ctx context.Context, userID int64, region string) ([]guide.Title, error)
-	CreateGuideReplacingOverlaps(ctx context.Context, userID int64, startDate, endDate string, seed int64, items []guide.Item) (*store.Guide, error)
-	CurrentGuide(ctx context.Context, userID int64, today string) (*store.Guide, error)
-	GuideWithItems(ctx context.Context, userID, guideID int64) (*store.Guide, error)
-	ReplaceUnkeptItems(ctx context.Context, userID, guideID int64, keepIDs []int64, newItems []guide.Item, seed int64) (*store.Guide, error)
-	UpdateGuideItem(ctx context.Context, userID, guideID, itemID int64, upd store.GuideItemUpdate) (*store.GuideItem, error)
-	DeleteGuideItem(ctx context.Context, userID, guideID, itemID int64) error
-	MarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
-	UnmarkItemWatched(ctx context.Context, userID, guideID, itemID int64) (*store.GuideItem, error)
-	SwapTitle(ctx context.Context, userID, titleID int64, region string) (*store.SwapInfo, error)
-	GuideLookups(ctx context.Context, guideID int64) (map[int64]store.TitleLookup, map[int64]store.ProviderRow, error)
+	GuideInputTitles(ctx context.Context, userID, region string) ([]guide.Title, error)
+	CreateGuideReplacingOverlaps(ctx context.Context, userID, startDate, endDate string, seed int64, items []guide.Item) (*docstore.Guide, error)
+	CurrentGuide(ctx context.Context, userID, today string) (*docstore.Guide, error)
+	GuideWithItems(ctx context.Context, userID, guideID string) (*docstore.Guide, error)
+	ReplaceUnkeptItems(ctx context.Context, userID, guideID string, keepIDs []string, newItems []guide.Item, seed int64) (*docstore.Guide, error)
+	UpdateGuideItem(ctx context.Context, userID, guideID, itemID string, upd docstore.GuideItemUpdate) (*docstore.GuideItem, error)
+	DeleteGuideItem(ctx context.Context, userID, guideID, itemID string) error
+	MarkItemWatched(ctx context.Context, userID, guideID, itemID string) (*docstore.GuideItem, error)
+	UnmarkItemWatched(ctx context.Context, userID, guideID, itemID string) (*docstore.GuideItem, error)
+	SwapTitle(ctx context.Context, userID, titleID, region string) (*docstore.SwapInfo, error)
+	GuideLookups(ctx context.Context, items []docstore.GuideItem) (map[string]docstore.TitleLookup, map[int64]docstore.ProviderRow, error)
 }
 
 const dateFmt = "2006-01-02"
@@ -49,7 +49,7 @@ func guideDays(start time.Time, days int, windows map[string]prefs.ParsedWindow)
 	return out
 }
 
-func (d Deps) buildInput(ctx context.Context, u *store.User, start time.Time, days int, seed int64, keep []guide.Item) (guide.Input, error) {
+func (d Deps) buildInput(ctx context.Context, u *docstore.User, start time.Time, days int, seed int64, keep []guide.Item) (guide.Input, error) {
 	windows, err := prefs.Windows(u.SchedulePrefs)
 	if err != nil {
 		return guide.Input{}, err
@@ -64,16 +64,16 @@ func (d Deps) buildInput(ctx context.Context, u *store.User, start time.Time, da
 // guideResponse decorates a guide with rendering dictionaries so the web
 // can resolve item ids without extra round trips (#18).
 type guideResponse struct {
-	*store.Guide
-	Titles    map[int64]store.TitleLookup `json:"titles"`
-	Providers map[int64]store.ProviderRow `json:"providers"`
+	*docstore.Guide
+	Titles    map[string]docstore.TitleLookup `json:"titles"`
+	Providers map[int64]docstore.ProviderRow  `json:"providers"`
 }
 
 // writeGuide responds with the guide plus its sidecars at the given status code.
 // It fetches the title/provider lookups first; on failure, writes a 500 error and returns.
 // Sets Content-Type and status code before encoding to ensure they ship with the response.
-func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, status int, g *store.Guide) {
-	titles, provs, err := d.Guides.GuideLookups(r.Context(), g.ID)
+func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, status int, g *docstore.Guide) {
+	titles, provs, err := d.Guides.GuideLookups(r.Context(), g.Items)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
@@ -125,7 +125,7 @@ func handleCurrentGuide(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		g, err := d.Guides.CurrentGuide(r.Context(), u.ID, d.Now().UTC().Format(dateFmt))
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -146,7 +146,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		g, err := d.Guides.GuideWithItems(r.Context(), u.ID, gid)
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -155,7 +155,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 		}
 
 		today := d.Now().UTC().Format(dateFmt)
-		var keepIDs []int64
+		var keepIDs []string
 		var keep []guide.Item
 		for _, it := range g.Items {
 			if it.Pinned || it.Edited || it.Watched || it.Date < today {
@@ -232,7 +232,7 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 		var body struct {
 			Date     *string `json:"date"`
 			StartMin *int    `json:"start_min"`
-			TitleID  *int64  `json:"title_id"`
+			TitleID  *string `json:"title_id"`
 			Pinned   *bool   `json:"pinned"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -255,14 +255,14 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 		}
 
 		u := userFrom(r.Context())
-		upd := store.GuideItemUpdate{Date: body.Date, StartMin: body.StartMin, Pinned: body.Pinned,
+		upd := docstore.GuideItemUpdate{Date: body.Date, StartMin: body.StartMin, Pinned: body.Pinned,
 			SetEdited: body.Date != nil || body.StartMin != nil || body.TitleID != nil,
 			Today:     d.Now().UTC().Format(dateFmt)}
 
 		if body.TitleID != nil {
 			info, err := d.Guides.SwapTitle(r.Context(), u.ID, *body.TitleID, u.Region)
 			switch {
-			case errors.Is(err, store.ErrTitleNotFound):
+			case errors.Is(err, docstore.ErrTitleNotFound):
 				writeJSONError(w, http.StatusUnprocessableEntity, "invalid title")
 				return
 			case err != nil:
@@ -285,13 +285,13 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 
 		it, err := d.Guides.UpdateGuideItem(r.Context(), u.ID, gid, itemID, upd)
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
-		case errors.Is(err, store.ErrPastMove):
+		case errors.Is(err, docstore.ErrPastMove):
 			writeJSONError(w, http.StatusUnprocessableEntity, "cannot move past slot")
 			return
-		case errors.Is(err, store.ErrPastTarget):
+		case errors.Is(err, docstore.ErrPastTarget):
 			writeJSONError(w, http.StatusUnprocessableEntity, "cannot move into the past")
 			return
 		case err != nil:
@@ -314,7 +314,7 @@ func handleDeleteItem(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		err := d.Guides.DeleteGuideItem(r.Context(), u.ID, gid, itemID)
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -336,7 +336,7 @@ func handleWatchItem(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		it, err := d.Guides.MarkItemWatched(r.Context(), u.ID, gid, itemID)
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -359,7 +359,7 @@ func handleUnwatchItem(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		it, err := d.Guides.UnmarkItemWatched(r.Context(), u.ID, gid, itemID)
 		switch {
-		case errors.Is(err, store.ErrGuideNotFound):
+		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
 			return
 		case err != nil:
@@ -371,8 +371,14 @@ func handleUnwatchItem(d Deps) http.HandlerFunc {
 	}
 }
 
-// pathID parses a positive int64 chi URL param.
-func pathID(r *http.Request, name string) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
-	return id, err == nil && id >= 1
+// pathID returns a chi URL param as a document ID. chi matches on the raw
+// path, so the param is unescaped first: an encoded slash (%2F) must not slip
+// past the check. ok is false for anything that can't be a Firestore
+// document ID; callers answer 404, as they did for non-numeric IDs.
+func pathID(r *http.Request, name string) (string, bool) {
+	id, err := url.PathUnescape(chi.URLParam(r, name))
+	if err != nil || !docstore.ValidID(id) {
+		return "", false
+	}
+	return id, true
 }

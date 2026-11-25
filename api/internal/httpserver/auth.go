@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/fbauth"
 	"github.com/shottah/lineup/api/internal/prefs"
-	"github.com/shottah/lineup/api/internal/store"
 )
 
-// UserStore is the slice of *store.Store the auth layer needs; narrowed to
-// an interface so handler tests run without Postgres.
+// UserStore is the slice of *docstore.Store the auth layer needs; narrowed to
+// an interface so handler tests run without Firestore.
 type UserStore interface {
-	UpsertUserByFirebaseUID(ctx context.Context, firebaseUID, email, displayName string, defaultPrefs json.RawMessage) (*store.User, error)
-	UpdateUserPrefs(ctx context.Context, userID int64, region *string, prefsJSON json.RawMessage) (*store.User, error)
+	UpsertUserByFirebaseUID(ctx context.Context, firebaseUID, email, displayName string, defaultPrefs json.RawMessage) (*docstore.User, error)
+	UpdateUserPrefs(ctx context.Context, userID string, region *string, prefsJSON json.RawMessage) (*docstore.User, error)
 }
 
 type ctxKey int
@@ -25,8 +25,8 @@ const userKey ctxKey = 0
 
 // userFrom returns the authenticated user placed on the context by
 // requireAuth, or nil outside an authenticated request.
-func userFrom(ctx context.Context) *store.User {
-	u, _ := ctx.Value(userKey).(*store.User)
+func userFrom(ctx context.Context) *docstore.User {
+	u, _ := ctx.Value(userKey).(*docstore.User)
 	return u
 }
 

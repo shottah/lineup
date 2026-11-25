@@ -32,3 +32,11 @@ func TestValidID(t *testing.T) {
 		}
 	}
 }
+
+func TestExportedValidIDMatches(t *testing.T) {
+	for _, id := range []string{"abc", "series-1399", "", "a/b", "__x__"} {
+		if ValidID(id) != validID(id) {
+			t.Errorf("ValidID(%q) = %v, want %v", id, ValidID(id), validID(id))
+		}
+	}
+}

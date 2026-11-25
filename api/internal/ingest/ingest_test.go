@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shottah/lineup/api/internal/store"
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/tmdb"
 	"github.com/shottah/lineup/api/internal/tvmaze"
 )
@@ -59,19 +59,19 @@ func (f *fakeTVMaze) Episodes(_ context.Context, _ int) ([]tvmaze.Episode, error
 	return f.eps, nil
 }
 
-// fakeStore mimics the SQL semantics ingest depends on: COALESCE'd
+// fakeStore mimics the store semantics ingest depends on: sticky
 // tvmaze_id, refreshed_at stamping on upsert, class stamps on replaces.
 type fakeStore struct {
-	title                                           *store.Title
-	seasons                                         []store.SeasonRow
-	provsByRegion                                   map[string][]store.ProviderRow
-	airings                                         []store.AiringRow
+	title                                           *docstore.Title
+	seasons                                         []docstore.SeasonRow
+	provsByRegion                                   map[string][]docstore.ProviderRow
+	airings                                         []docstore.AiringRow
 	airToday                                        string
 	getErr, upsertErr, seasonsErr, provsErr, airErr error
 	upserts, seasonCalls, provCalls, airCalls       int
 }
 
-func (f *fakeStore) GetTitleByTMDB(_ context.Context, _ string, _ int64) (*store.Title, error) {
+func (f *fakeStore) GetTitleByTMDB(_ context.Context, _ string, _ int64) (*docstore.Title, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -82,13 +82,13 @@ func (f *fakeStore) GetTitleByTMDB(_ context.Context, _ string, _ int64) (*store
 	return &cp, nil
 }
 
-func (f *fakeStore) UpsertTitle(_ context.Context, u store.TitleUpsert) (*store.Title, error) {
+func (f *fakeStore) UpsertTitle(_ context.Context, u docstore.TitleUpsert) (*docstore.Title, error) {
 	f.upserts++
 	if f.upsertErr != nil {
 		return nil, f.upsertErr
 	}
 	if f.title == nil {
-		f.title = &store.Title{ID: 1}
+		f.title = &docstore.Title{ID: docstore.TitleID(u.Kind, u.TMDBID)}
 	}
 	f.title.TMDBID, f.title.Kind = u.TMDBID, u.Kind
 	f.title.Name, f.title.Overview, f.title.PosterPath = u.Name, u.Overview, u.PosterPath
@@ -101,7 +101,7 @@ func (f *fakeStore) UpsertTitle(_ context.Context, u store.TitleUpsert) (*store.
 	return &cp, nil
 }
 
-func (f *fakeStore) ReplaceSeasons(_ context.Context, _ int64, seasons []store.SeasonRow) error {
+func (f *fakeStore) ReplaceSeasons(_ context.Context, _ string, seasons []docstore.SeasonRow) error {
 	f.seasonCalls++
 	if f.seasonsErr != nil {
 		return f.seasonsErr
@@ -110,20 +110,20 @@ func (f *fakeStore) ReplaceSeasons(_ context.Context, _ int64, seasons []store.S
 	return nil
 }
 
-func (f *fakeStore) ReplaceProviders(_ context.Context, _ int64, region string, provs []store.ProviderRow) error {
+func (f *fakeStore) ReplaceProviders(_ context.Context, _ string, region string, provs []docstore.ProviderRow) error {
 	f.provCalls++
 	if f.provsErr != nil {
 		return f.provsErr
 	}
 	if f.provsByRegion == nil {
-		f.provsByRegion = map[string][]store.ProviderRow{}
+		f.provsByRegion = map[string][]docstore.ProviderRow{}
 	}
 	f.provsByRegion[region] = provs
 	f.title.ProvidersRefreshedAt = now
 	return nil
 }
 
-func (f *fakeStore) ReplaceFutureAirings(_ context.Context, _ int64, today string, airs []store.AiringRow) error {
+func (f *fakeStore) ReplaceFutureAirings(_ context.Context, _ string, today string, airs []docstore.AiringRow) error {
 	f.airCalls++
 	if f.airErr != nil {
 		return f.airErr
@@ -139,9 +139,9 @@ func svc(tm *fakeTMDB, tv *fakeTVMaze, st *fakeStore) *Service {
 }
 
 // airingSeries is a cached series row with every class fresh as of `now`.
-func airingSeries(tvmazeID *int64) *store.Title {
-	return &store.Title{
-		ID: 1, TMDBID: 1399, Kind: "series", TVMazeID: tvmazeID, Name: "GoT",
+func airingSeries(tvmazeID *int64) *docstore.Title {
+	return &docstore.Title{
+		ID: "series-1399", TMDBID: 1399, Kind: "series", TVMazeID: tvmazeID, Name: "GoT",
 		Airing: true, RefreshedAt: now.Add(-time.Hour),
 		ProvidersRefreshedAt: now.Add(-time.Hour), AiringsRefreshedAt: now.Add(-time.Hour),
 	}
@@ -204,7 +204,7 @@ func TestFreshAiringSeriesWithIMDB(t *testing.T) {
 	if st.airToday != "2026-07-15" {
 		t.Fatalf("today = %q", st.airToday)
 	}
-	want := []store.AiringRow{{Season: 9, Episode: 2, AirDate: "2026-07-15"}, {Season: 9, Episode: 3, AirDate: "2026-08-01"}}
+	want := []docstore.AiringRow{{Season: 9, Episode: 2, AirDate: "2026-07-15"}, {Season: 9, Episode: 3, AirDate: "2026-08-01"}}
 	if len(st.airings) != 2 || st.airings[0] != want[0] || st.airings[1] != want[1] {
 		t.Fatalf("airings = %+v, want %+v", st.airings, want)
 	}
