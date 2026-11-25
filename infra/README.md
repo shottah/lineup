@@ -27,7 +27,7 @@ If the project is being re-created under a new project id, run these in order:
 1. `bash infra/bootstrap.sh <NEW_PROJECT_ID> <BILLING_ACCOUNT_ID>` (project, APIs, Firestore, repo, secrets, SA)
 2. `gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project <NEW_PROJECT_ID>` then `bash infra/create-trigger.sh` (pipeline, IAM, trigger)
 
-3. `firebase deploy --only firestore --project <NEW_PROJECT_ID>` (deploys the deny-all `firestore.rules`)
+3. `firebase deploy --only firestore --project <NEW_PROJECT_ID>` (deploys the deny-all `firestore.rules` **and** `firestore.indexes.json`). The shelf queries return 500 without the composite indexes, so wait until `gcloud firestore indexes composite list --project <NEW_PROJECT_ID>` shows every index `READY` before deploying the API
 
 ## What `bootstrap.sh` provisions
 

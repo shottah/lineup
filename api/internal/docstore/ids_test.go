@@ -2,6 +2,7 @@ package docstore
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -21,12 +22,12 @@ func TestNewItemIDShape(t *testing.T) {
 }
 
 func TestValidID(t *testing.T) {
-	for _, id := range []string{"abc", "series-1399"} {
+	for _, id := range []string{"abc", "series-1399", "a.b", "..."} {
 		if !validID(id) {
 			t.Errorf("validID(%q) = false, want true", id)
 		}
 	}
-	for _, id := range []string{"", "a/b", "__x__"} {
+	for _, id := range []string{"", "a/b", "__x__", ".", "..", strings.Repeat("x", 1501)} {
 		if validID(id) {
 			t.Errorf("validID(%q) = true, want false", id)
 		}

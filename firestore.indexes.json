@@ -25,5 +25,16 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "guides",
+      "fieldPath": "items",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "titles",
+      "fieldPath": "airings",
+      "indexes": []
+    }
+  ]
 }
