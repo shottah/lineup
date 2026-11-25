@@ -94,7 +94,7 @@ func (s *Store) UpsertUserByFirebaseUID(ctx context.Context, uid, email, display
 		if err != nil && !isNotFound(err) {
 			return err
 		}
-		now := time.Now().UTC()
+		now := now()
 		var d userDoc
 		if err != nil {
 			d = userDoc{Email: email, DisplayName: displayName, Region: "US", SchedulePrefs: prefs, CreatedAt: now, UpdatedAt: now}
@@ -158,7 +158,7 @@ func (s *Store) UpdateUserPrefs(ctx context.Context, userID string, region *stri
 		if err := snap.DataTo(&d); err != nil {
 			return err
 		}
-		now := time.Now().UTC()
+		now := now()
 		d.UpdatedAt = now
 		ups := []firestore.Update{{Path: "updatedAt", Value: now}}
 		if region != nil {

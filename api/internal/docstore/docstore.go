@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/firestore"
 )
@@ -33,3 +34,7 @@ func validID(id string) bool {
 // ValidID reports whether id is usable as a Firestore document ID. Handlers
 // use it to reject path IDs before they reach the store.
 func ValidID(id string) bool { return validID(id) }
+
+// now returns the current UTC time truncated to microseconds, the precision
+// Firestore stores, so values returned from writes equal values read back.
+func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }

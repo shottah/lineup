@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"cloud.google.com/go/firestore"
 )
@@ -111,7 +110,7 @@ func (s *Store) MarkItemWatched(ctx context.Context, userID, guideID, itemID str
 		}
 
 		if e := w.entry; e != nil {
-			now := time.Now().UTC()
+			now := now()
 			var ups []firestore.Update
 			complete := func() {
 				ups = append(ups,
