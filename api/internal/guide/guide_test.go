@@ -27,12 +27,12 @@ func week(weekday, weekend Window) []Day {
 
 func evening() Window { return Window{StartMin: 19 * 60, EndMin: 23 * 60} } // 240 min
 
-func series(id int64, runtime int, providers ...int64) Title {
+func series(id string, runtime int, providers ...int64) Title {
 	return Title{ID: id, Kind: "series", Name: "S", Runtime: runtime, Providers: providers,
 		Pointer: Pointer{Season: 1, Episode: 1}, SeasonEpisodes: map[int]int{1: 10, 2: 10}}
 }
 
-func movie(id int64, runtime int, providers ...int64) Title {
+func movie(id string, runtime int, providers ...int64) Title {
 	return Title{ID: id, Kind: "movie", Name: "M", Runtime: runtime, Providers: providers}
 }
 
@@ -50,11 +50,11 @@ func plans(items []Item) []Item {
 
 func TestRegeneratePreservesKeep(t *testing.T) {
 	keep := Item{Date: "2026-01-06", StartMin: 19 * 60, EndMin: 20 * 60,
-		TitleID: 7, Season: 1, Episode: 3, Provider: 1, IsPlan: true, Pinned: true}
+		TitleID: "7", Season: 1, Episode: 3, Provider: 1, IsPlan: true, Pinned: true}
 	in := Input{
 		Seed: 42,
 		Days: week(evening(), evening()),
-		Titles: []Title{{ID: 7, Kind: "series", Runtime: 60, Providers: []int64{1},
+		Titles: []Title{{ID: "7", Kind: "series", Runtime: 60, Providers: []int64{1},
 			Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10}}},
 		Keep: []Item{keep},
 	}
@@ -62,7 +62,7 @@ func TestRegeneratePreservesKeep(t *testing.T) {
 
 	var found *Item
 	for i := range out {
-		if out[i].Pinned && out[i].TitleID == 7 && out[i].Date == "2026-01-06" {
+		if out[i].Pinned && out[i].TitleID == "7" && out[i].Date == "2026-01-06" {
 			found = &out[i]
 			break
 		}
@@ -72,14 +72,14 @@ func TestRegeneratePreservesKeep(t *testing.T) {
 	}
 	// The kept episode is marked placed: nothing else may schedule S1E3 of title 7.
 	for _, it := range plans(out) {
-		if it.TitleID == 7 && it.Season == 1 && it.Episode == 3 && !it.Pinned {
+		if it.TitleID == "7" && it.Season == 1 && it.Episode == 3 && !it.Pinned {
 			t.Fatalf("kept episode rescheduled: %+v", it)
 		}
 	}
 }
 
 func TestAirdatePin(t *testing.T) {
-	tt := series(1, 60, 5)
+	tt := series("1", 60, 5)
 	tt.Airing = true
 	tt.AirDates = []AiredEpisode{
 		{Season: 1, Episode: 1, Date: "2026-01-04"}, // before range: schedulable but not pinned
@@ -93,11 +93,11 @@ func TestAirdatePin(t *testing.T) {
 	var pinDates []string
 	var e1Placed, e1Pinned bool
 	for _, it := range plans(out) {
-		if it.TitleID == 1 && it.Season == 1 && it.Episode == 1 {
+		if it.TitleID == "1" && it.Season == 1 && it.Episode == 1 {
 			e1Placed = true
 			e1Pinned = it.Pinned
 		}
-		if it.TitleID == 1 && it.Season == 1 && it.Episode == 2 {
+		if it.TitleID == "1" && it.Season == 1 && it.Episode == 2 {
 			pinDates = append(pinDates, it.Date)
 			if !it.Pinned {
 				t.Fatalf("air-date item not Pinned: %+v", it)
@@ -124,7 +124,7 @@ func TestMovieOnLongestDay(t *testing.T) {
 	in := Input{
 		Seed:   9,
 		Days:   week(Window{19 * 60, 21 * 60}, Window{19 * 60, 23 * 60}),
-		Titles: []Title{movie(3, 130, 2)},
+		Titles: []Title{movie("3", 130, 2)},
 	}
 	out := Generate(in)
 	got := plans(out)
@@ -147,8 +147,8 @@ func TestMovieOnLongestDay(t *testing.T) {
 
 func TestDeterministic(t *testing.T) {
 	mk := func() Input {
-		s1, s2, s3 := series(1, 60, 1), series(2, 60, 2), series(3, 30, 1, 2)
-		m := movie(4, 120, 3)
+		s1, s2, s3 := series("1", 60, 1), series("2", 60, 2), series("3", 30, 1, 2)
+		m := movie("4", 120, 3)
 		return Input{Seed: 1234, Days: week(evening(), evening()), Titles: []Title{s1, s2, s3, m}}
 	}
 	a, b := Generate(mk()), Generate(mk())
@@ -162,7 +162,7 @@ func TestDeterministic(t *testing.T) {
 
 func TestFitsWindow(t *testing.T) {
 	in := Input{Seed: 5, Days: week(Window{20 * 60, 22 * 60}, Window{18 * 60, 23 * 60}),
-		Titles: []Title{series(1, 45, 1), series(2, 60, 2), movie(3, 200, 1)}}
+		Titles: []Title{series("1", 45, 1), series("2", 60, 2), movie("3", 200, 1)}}
 	byDate := map[string]Window{}
 	for _, d := range in.Days {
 		byDate[d.Date] = d.Window
@@ -181,7 +181,7 @@ func TestFitsWindow(t *testing.T) {
 func TestOneEpisodePerSeriesPerDay(t *testing.T) {
 	// One 30-min series, plenty of window: without the constraint it would
 	// fill a whole evening with the same show.
-	in := Input{Seed: 3, Days: week(evening(), evening()), Titles: []Title{series(1, 30, 1)}}
+	in := Input{Seed: 3, Days: week(evening(), evening()), Titles: []Title{series("1", 30, 1)}}
 	seen := map[string]int{}
 	for _, it := range plans(Generate(in)) {
 		seen[it.Date]++
@@ -198,8 +198,8 @@ func TestFairness(t *testing.T) {
 	// Three 60-min series, 240-min windows: 21 slots over the week vs 28
 	// needed for 4/day — every title must appear, spread within 1.
 	in := Input{Seed: 7, Days: week(evening(), evening()),
-		Titles: []Title{series(1, 60, 1), series(2, 60, 2), series(3, 60, 3)}}
-	counts := map[int64]int{}
+		Titles: []Title{series("1", 60, 1), series("2", 60, 2), series("3", 60, 3)}}
+	counts := map[string]int{}
 	for _, it := range plans(Generate(in)) {
 		counts[it.TitleID]++
 	}
@@ -223,7 +223,7 @@ func TestFairness(t *testing.T) {
 func TestPointerSequence(t *testing.T) {
 	// Pointer starts at S1E9 with 10 eps in S1: placements must run
 	// S1E9, S1E10, S2E1, S2E2, ... in date order.
-	tt := series(1, 60, 1)
+	tt := series("1", 60, 1)
 	tt.Pointer = Pointer{Season: 1, Episode: 9}
 	in := Input{Seed: 11, Days: week(evening(), evening()), Titles: []Title{tt}}
 	var got []epKey
@@ -240,13 +240,13 @@ func TestAlternates(t *testing.T) {
 	// Five titles across distinct providers: plan slots must carry up to 3
 	// alternates, provider-diverse first, never a title already planned
 	// that day, and pointers must not advance from alternate listing.
-	titles := []Title{series(1, 60, 1), series(2, 60, 2), series(3, 60, 3), series(4, 60, 4), series(5, 60, 5)}
+	titles := []Title{series("1", 60, 1), series("2", 60, 2), series("3", 60, 3), series("4", 60, 4), series("5", 60, 5)}
 	in := Input{Seed: 21, Days: week(evening(), evening()), Titles: titles}
 	out := Generate(in)
 
 	plansBySlot := map[[2]interface{}]Item{}
 	altsBySlot := map[[2]interface{}][]Item{}
-	planned := map[[2]interface{}]map[int64]bool{}
+	planned := map[[2]interface{}]map[string]bool{}
 	for _, it := range out {
 		key := [2]interface{}{it.Date, it.StartMin}
 		if it.IsPlan {
@@ -257,7 +257,7 @@ func TestAlternates(t *testing.T) {
 	}
 	for _, it := range plans(out) {
 		if planned[[2]interface{}{it.Date, 0}] == nil {
-			planned[[2]interface{}{it.Date, 0}] = map[int64]bool{}
+			planned[[2]interface{}{it.Date, 0}] = map[string]bool{}
 		}
 		planned[[2]interface{}{it.Date, 0}][it.TitleID] = true
 	}
@@ -278,7 +278,7 @@ func TestAlternates(t *testing.T) {
 				t.Fatalf("alternate repeats plan title at %v", key)
 			}
 			if planned[[2]interface{}{a.Date, 0}][a.TitleID] {
-				t.Fatalf("alternate %d already planned on %s", a.TitleID, a.Date)
+				t.Fatalf("alternate %s already planned on %s", a.TitleID, a.Date)
 			}
 			if a.StartMin != p.StartMin {
 				t.Fatalf("alternate start %d != plan start %d", a.StartMin, p.StartMin)
@@ -300,7 +300,7 @@ func TestAlternates(t *testing.T) {
 	// Alternates never advance pointers: rerunning with the same input is
 	// deep-equal (covered by TestDeterministic) AND every plan episode for
 	// each title is still the exact pointer sequence.
-	seq := map[int64][]epKey{}
+	seq := map[string][]epKey{}
 	for _, it := range plans(out) {
 		seq[it.TitleID] = append(seq[it.TitleID], epKey{it.Season, it.Episode})
 	}
@@ -308,7 +308,7 @@ func TestAlternates(t *testing.T) {
 		for i, k := range eps {
 			want := epKey{1, i + 1}
 			if k != want {
-				t.Fatalf("title %d plan episode %d = %v, want %v (alternates leaked into pointer state)", id, i, k, want)
+				t.Fatalf("title %s plan episode %d = %v, want %v (alternates leaked into pointer state)", id, i, k, want)
 			}
 		}
 	}
@@ -319,7 +319,7 @@ func TestGenerateDoesNotMutateInput(t *testing.T) {
 	airDates := []AiredEpisode{{Season: 1, Episode: 2, Date: "2026-01-07"}, {Season: 1, Episode: 1, Date: "2026-01-05"}}
 	seasons := map[int]int{1: 10}
 	in := Input{Seed: 2, Days: week(evening(), evening()),
-		Titles: []Title{{ID: 1, Kind: "series", Runtime: 60, Providers: providers, Airing: true,
+		Titles: []Title{{ID: "1", Kind: "series", Runtime: 60, Providers: providers, Airing: true,
 			Pointer: Pointer{1, 1}, SeasonEpisodes: seasons, AirDates: airDates}}}
 	Generate(in)
 	if !reflect.DeepEqual(providers, []int64{9, 1, 5}) {
@@ -338,11 +338,11 @@ func TestGenerateDoesNotMutateInput(t *testing.T) {
 // permInput is a mixed fixture (airing series, plain series, movies, a
 // keep) sized to exercise sort-order sensitivity in every pass.
 func permInput() Input {
-	mk := func(id int64, rt int, provs ...int64) Title {
+	mk := func(id string, rt int, provs ...int64) Title {
 		return Title{ID: id, Kind: "series", Runtime: rt, Providers: provs,
 			Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 8, 2: 8}}
 	}
-	air := mk(5, 60, 3, 1)
+	air := mk("5", 60, 3, 1)
 	air.Airing = true
 	air.AirDates = []AiredEpisode{
 		{1, 1, "2026-01-02"}, {1, 2, "2026-01-06"}, {1, 3, "2026-01-08"}, {1, 4, "2026-01-15"},
@@ -357,12 +357,12 @@ func permInput() Input {
 		days = append(days, Day{Date: d, Window: w})
 	}
 	keep := []Item{
-		{Date: "2026-01-06", StartMin: 19 * 60, EndMin: 20 * 60, TitleID: 2, Season: 1, Episode: 1, Provider: 2, IsPlan: true, Pinned: true},
+		{Date: "2026-01-06", StartMin: 19 * 60, EndMin: 20 * 60, TitleID: "2", Season: 1, Episode: 1, Provider: 2, IsPlan: true, Pinned: true},
 	}
 	return Input{Seed: 99, Days: days,
-		Titles: []Title{mk(1, 45, 1), mk(2, 60, 2), mk(3, 30, 2, 1), air,
-			{ID: 4, Kind: "movie", Runtime: 130, Providers: []int64{4, 1}},
-			{ID: 6, Kind: "movie", Runtime: 90, Providers: []int64{2}}},
+		Titles: []Title{mk("1", 45, 1), mk("2", 60, 2), mk("3", 30, 2, 1), air,
+			{ID: "4", Kind: "movie", Runtime: 130, Providers: []int64{4, 1}},
+			{ID: "6", Kind: "movie", Runtime: 90, Providers: []int64{2}}},
 		Keep: keep}
 }
 
@@ -398,10 +398,10 @@ func TestPermutationInvariance(t *testing.T) {
 // out-of-chronological writes could clobber) must keep series 1 off Sat
 // once it lands Fri, so series 2 wins that slot outright.
 func varietyInput(seed int64) Input {
-	a := Title{ID: 1, Kind: "series", Runtime: 60, Providers: []int64{1}, Airing: true,
+	a := Title{ID: "1", Kind: "series", Runtime: 60, Providers: []int64{1}, Airing: true,
 		Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10},
 		AirDates: []AiredEpisode{{1, 1, "2026-01-05"}, {1, 2, "2026-01-09"}, {1, 3, "2026-01-06"}}}
-	b := Title{ID: 2, Kind: "series", Runtime: 60, Providers: []int64{2},
+	b := Title{ID: "2", Kind: "series", Runtime: 60, Providers: []int64{2},
 		Pointer: Pointer{1, 1}, SeasonEpisodes: map[int]int{1: 10}}
 	days := []Day{
 		{Date: "2026-01-07", Window: Window{19 * 60, 20 * 60}},
@@ -422,17 +422,17 @@ func TestVarietyPenaltyConsecutiveNights(t *testing.T) {
 	var example []Item
 	for seed := int64(0); seed < 50; seed++ {
 		out := Generate(varietyInput(seed))
-		onDay := map[string]map[int64]bool{}
+		onDay := map[string]map[string]bool{}
 		for _, it := range out {
 			if !it.IsPlan {
 				continue
 			}
 			if onDay[it.Date] == nil {
-				onDay[it.Date] = map[int64]bool{}
+				onDay[it.Date] = map[string]bool{}
 			}
 			onDay[it.Date][it.TitleID] = true
 		}
-		if onDay["2026-01-09"][1] && onDay["2026-01-10"][1] && !onDay["2026-01-10"][2] {
+		if onDay["2026-01-09"]["1"] && onDay["2026-01-10"]["1"] && !onDay["2026-01-10"]["2"] {
 			violations++
 			if example == nil {
 				for _, it := range out {
@@ -458,7 +458,7 @@ func TestVarietyPenaltyConsecutiveNights(t *testing.T) {
 // any future-dated episode goes almost entirely unschedulable. A known
 // future date must still wait for, and pin to, its air night.
 func TestAiringBackCatalogSchedulable(t *testing.T) {
-	tt := series(1, 60, 1)
+	tt := series("1", 60, 1)
 	tt.Airing = true
 	tt.AirDates = []AiredEpisode{
 		{Season: 1, Episode: 4, Date: "2026-01-09"}, // known future date: must wait for/pin to it
@@ -468,7 +468,7 @@ func TestAiringBackCatalogSchedulable(t *testing.T) {
 
 	placed := map[epKey]Item{}
 	for _, it := range plans(out) {
-		if it.TitleID == 1 {
+		if it.TitleID == "1" {
 			placed[epKey{it.Season, it.Episode}] = it
 		}
 	}
