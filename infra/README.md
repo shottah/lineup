@@ -115,10 +115,12 @@ auth is Firebase ID tokens, added in a later task.
   ```
 
 - [ ] **Replace the placeholder TMDB read token** (v4 read access token, sent
-  as a Bearer header — not the v3 api key) with the real value:
+  as a Bearer header — not the v3 api key) with the real value. The script
+  prompts without echoing (or reads stdin), refuses non-JWT values, and
+  disables older versions:
 
   ```bash
-  printf '%s' "$(cat ~/.lineup/tmdb_read_token)" | gcloud secrets versions add tmdb-read-token --data-file=- --project lineup-app-ae6b
+  bash infra/set-tmdb-token.sh
   ```
 
 - [ ] Firebase Auth + App Hosting setup — follow `infra/firebase.md` (health-gated runbook; the `projects:addfirebase` step is irreversible).

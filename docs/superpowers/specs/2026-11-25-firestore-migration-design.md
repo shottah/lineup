@@ -94,9 +94,11 @@ Firestore timestamps.
 ### `users/{firebaseUid}`
 
 The Firebase UID is the user ID; the separate internal numeric user ID goes
-away. The UID stays out of the API JSON (`store.User.ID` keeps `json:"-"`, as
-today); the web never reads `user.id`. (Author's call: preserves the current
-deliberate exclusion.)
+away. `/v1/me` returns it as `id` (owner's decision): a Firebase UID is a
+random, non-sequential identifier, not a credential; the signed-in client
+already holds it via the Auth SDK, and deny-all rules mean knowing it grants
+nothing. This replaces today's `json:"-"` exclusion, which existed for the
+sequential internal ID.
 
 ```
 email, displayName, region (default "US"), schedulePrefs (map),
@@ -137,6 +139,7 @@ providers: map region -> array of provider IDs (numbers, sorted ascending)
 updates on the title doc. `ReplaceFutureAirings` replaces only airings on or
 after `today` and keeps past airings forever, exactly as the current code
 does; the engine relies on past airings (`passAirPins`, `schedulable`).
+Keeping them forever is accepted for now (owner's decision); see Follow-ups.
 
 ### `providers/{providerId}`
 
@@ -240,18 +243,22 @@ queries need. Rules and indexes deploy with `firebase deploy --only firestore`.
 
 - `bootstrap.sh`: enable `firestore.googleapis.com`; create the `(default)`
   database (Native, `us-central1`) if absent; grant `roles/datastore.user` to
-  `api-runtime`. Verified 2026-11-25: the Firestore API is not yet enabled on
-  `lineup-app-ae6b`, so no database of any mode or location exists; mode and
-  location are permanent once created, so the script must pass both
-  explicitly.
+  `api-runtime`. Mode and location are permanent once created, so the script
+  passes both explicitly. **Already applied by hand on 2026-11-25:** API
+  enabled, `(default)` created (Native, `us-central1`, `freeTier: true`),
+  `roles/datastore.user` granted, and a deny-all ruleset released (verified:
+  unauthenticated reads get `PERMISSION_DENIED`). `bootstrap.sh` must still
+  encode these steps idempotently, and the repo's `firestore.rules` must match
+  the released ruleset.
 - `firebase.json`: add `firestore` (rules, indexes) and the Firestore
   emulator alongside the existing Auth emulator.
 - `run-service.yaml`: remove `DATABASE_URL` and its transitional comment.
 - TMDB secret: the manifests and `bootstrap.sh` use `tmdb-read-token`, but
   the project only has `tmdb-api-key`, and it holds the `REPLACE_ME`
   placeholder (checked by length/prefix, value not printed). Standardize on
-  `tmdb-read-token` (created by `bootstrap.sh`); delete `tmdb-api-key`. Loading
-  the real token stays a manual step in `infra/README.md`.
+  `tmdb-read-token` (created by `bootstrap.sh`); delete `tmdb-api-key`. The
+  owner loads the real token with `infra/set-tmdb-token.sh` (already added:
+  hidden prompt or stdin, rejects non-JWT values, disables older versions).
 - After the Firestore revision is deployed and healthy: delete the
   `database-url` and `db-password` secrets.
 - Docs: `infra/README.md`, `infra/local-dev.md` (Firestore emulator replaces
@@ -296,11 +303,20 @@ queries need. Rules and indexes deploy with `firebase deploy --only firestore`.
 
 1. Land PR #61 (VM infra retirement). This work stacks on it.
 2. Land this project's PR(s).
-3. Run the updated `bootstrap.sh` (Firestore API, database, IAM) and
-   `firebase deploy --only firestore` (rules, indexes).
+3. `firebase deploy --only firestore` (indexes; rules re-deploy unchanged).
+   Firestore API, database, IAM, and deny-all rules are already in place.
+   Owner runs `infra/set-tmdb-token.sh`.
 4. Deploy the API manually through the existing Cloud Deploy pipeline; check
    `/healthz` and a signed-in smoke test against the emulator-free stack.
 5. Delete `database-url`, `db-password`, `tmdb-api-key`.
+
+## Follow-ups (not in this project)
+
+- Airings retention. Past airings only matter for shows still airing; for
+  concluded shows only the run's start and end dates matter. Assess how much
+  stored airing data is irrelevant, then prune airings for concluded series
+  down to first/last air dates.
+- Automatic deploys (Cloud Build trigger, App Hosting backend).
 
 ## Left to the builder
 
