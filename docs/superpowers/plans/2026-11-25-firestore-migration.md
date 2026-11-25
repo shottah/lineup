@@ -125,7 +125,7 @@ infra/local-dev.md, README.md        modify
 
 - [ ] **Step 1: Port** `TestUpsertUserByFirebaseUID` and `TestUpdateUserPrefs` with the same assertions. Add: `ID == uid`; re-upsert with a new email/displayName refreshes them but keeps region and prefs; `json.Marshal(user)` contains `"id":"<uid>"`.
 - [ ] **Step 2: Run, expect failure** (undefined methods), using the emulator command from Task 1, scoped to `./internal/docstore/ -run User`.
-- [ ] **Step 3: Implement.** Do get-or-create in a transaction on `users/{uid}` with fields `email, displayName, region ("US"), schedulePrefs (map from defaultPrefs), createdAt, updatedAt`. `UpdateUserPrefs` updates only the non-nil fields plus `updatedAt`, and returns `ErrTitleNotFound`-style not-found? No: it returns a wrapped `firestore NotFound` error, matching the current method's error-on-missing behaviour as asserted by the ported test.
+- [ ] **Step 3: Implement.** Do get-or-create in a transaction on `users/{uid}` with fields `email, displayName, region ("US"), schedulePrefs (map from defaultPrefs), createdAt, updatedAt`. `UpdateUserPrefs` updates only the non-nil fields plus `updatedAt`, and returns an error (wrapped) when the user doc is missing.
 - [ ] **Step 4: Run, expect pass.**
 - [ ] **Step 5: Commit** `feat(docstore): users`
 
@@ -237,7 +237,7 @@ infra/local-dev.md, README.md        modify
 
 ### Task 8: Cutover: handlers, config, main; delete Postgres
 
-**Files:** Modify `api/internal/httpserver/*.go` and `*_test.go`, `api/internal/config/config.go` and `config_test.go`, `api/cmd/api/main.go`, `api/internal/ingest/ingest.go` and `ingest_test.go`, `api/go.mod`/`go.sum`, `api/Dockerfile` (if it references migrations); delete `api/internal/store/`
+**Files:** Modify `api/internal/httpserver/*.go` and `*_test.go`, `api/internal/config/config.go` and `config_test.go`, `api/cmd/api/main.go`, `api/internal/fbauth/fbauth.go`, `api/internal/ingest/ingest.go` and `ingest_test.go`, `api/go.mod`/`go.sum`; delete `api/internal/store/`
 
 **Interfaces:**
 - Consumes: everything in `docstore`
@@ -246,7 +246,7 @@ infra/local-dev.md, README.md        modify
 - [ ] **Step 1: Update handler tests and fakes** to string IDs and docstore types. Add `TestPathIDRejectsInvalid`: routes called with an `{id}` of `__x__` (and `%2F`-encoded slash) return 404.
 - [ ] **Step 2: Update handlers.** Replace `strconv.ParseInt` ID parsing with `pathID`, keeping `tmdbID` parsing numeric. Change `ingest.TitleStore` signatures to string title IDs.
 - [ ] **Step 3: Config and main.** `Config` drops `DatabaseURL` and `ErrMissingDatabaseURL` (update `config_test.go` and `envKeys`). `main.go` builds one `firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.FirebaseProjectID})`, gets `app.Firestore(ctx)` (closed on shutdown), wraps it in `docstore.New`, and runs no migrations. Change `fbauth.New` to accept the existing `*firebase.App` so one app is shared.
-- [ ] **Step 4: Delete** `api/internal/store/`, run `go mod tidy` (removes `pgx`, `golang-migrate`, `pgerrcode`), and remove any migration copy step from `api/Dockerfile`.
+- [ ] **Step 4: Delete** `api/internal/store/`, run `go mod tidy` (removes `pgx`, `golang-migrate`, `pgerrcode`). Migrations are embedded, so `api/Dockerfile` needs no change.
 - [ ] **Step 5: Verify.**
   Run: `cd api && go vet ./... && firebase emulators:exec --project demo-lineup --only firestore --config ../firebase.json "go test ./..."`
   Expected: vet clean; all packages PASS.
@@ -287,6 +287,6 @@ infra/local-dev.md, README.md        modify
 
 - [ ] **Step 1: Deploy rules and indexes.** Run `firebase deploy --only firestore --project lineup-app-ae6b`. Expected: rules unchanged, 3 indexes created. Then `gcloud firestore indexes composite list --project lineup-app-ae6b` shows them `READY` (wait if `CREATING`).
 - [ ] **Step 2: Open the PR** against `main` (stacked on #61) and link it to the thread. CI green, including store tests under the emulator.
-- [ ] **Step 3: After merge, deploy the API.** Run `gcloud builds submit --config infra/cloudbuild.yaml --region us-central1 --project lineup-app-ae6b --substitutions SHORT_SHA=$(git rev-parse --short HEAD)` from repo root (see `infra/README.md`, manual pipeline run). Expected: release created; the Cloud Deploy rollout succeeds.
+- [ ] **Step 3: After merge, deploy the API.** From repo root on the merged `main`, run `gcloud builds submit --config=infra/cloudbuild.yaml --substitutions=SHORT_SHA=$(git rev-parse --short HEAD) --project lineup-app-ae6b .` (the manual pipeline run in `infra/README.md`). Expected: release created; the Cloud Deploy rollout succeeds.
 - [ ] **Step 4: Smoke test.** `curl https://lineup-api-zzwkjc5sdq-uc.a.run.app/healthz` returns 200 with `{"ok":true}`. Revision logs show no Firestore permission errors. An unauthenticated `/v1/me` returns 401.
 - [ ] **Step 5: Ask the owner to confirm, then delete the legacy secrets** `database-url`, `db-password` and `tmdb-api-key` (`gcloud secrets delete <name> --project lineup-app-ae6b -q`). Confirm with `gcloud secrets list` that only `tmdb-read-token` and the GitHub OAuth secret remain.
