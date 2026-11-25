@@ -15,12 +15,11 @@ health gate.
 
 The project was soft-deleted and restored on 2026-07-08. Firebase enablement
 (step 1) is irreversible, so do not run it until Google's data planes all see
-the project as alive. ALL THREE must pass:
+the project as alive. BOTH must pass (the original third check, the `lineup-db` disk, no longer applies: the VM was retired on 2026-11-25):
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://lineup-api-zzwkjc5sdq-uc.a.run.app/healthz   # want: 200
 docker pull us-central1-docker.pkg.dev/lineup-app-ae6b/api/api:1830fa4                        # want: pull succeeds
-gcloud compute disks describe lineup-db --zone=us-central1-a --project=lineup-app-ae6b --format='value(status)'  # want: READY
 ```
 
 Any failure = still propagating; wait and re-run. Do not proceed partially.
@@ -28,7 +27,7 @@ Any failure = still propagating; wait and re-run. Do not proceed partially.
 TCP-wedge caveat (see `.superpowers/sdd/progress.md`, 2026-07-05 diagnosis):
 this project previously had a Google-side fault where run.app hostnames were
 unreachable over TCP (curl) while fine over HTTP/3 (Chrome). If the curl
-check above still fails long after the other two pass, ALSO test the same
+check above still fails long after the other one passes, ALSO test the same
 URL in Chrome. Chrome-200-but-curl-404 means the wedge survived the
 delete/restore cycle: STOP — the project needs the re-pave path (ledger's
 checklist, new project ID), and this runbook's project IDs must be
