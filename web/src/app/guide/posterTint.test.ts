@@ -14,22 +14,18 @@ import {
 } from "./posterTint";
 
 describe("hashHue", () => {
-  it("is deterministic for a given title_id", () => {
-    expect(hashHue(12345)).toBe(hashHue(12345));
-    expect(hashHue(95396)).toBe(hashHue(95396));
+  it("is deterministic for a given title id", () => {
+    expect(hashHue("series-1399")).toBe(hashHue("series-1399"));
   });
 
-  it("matches the spec's Knuth multiplicative hash (title_id * 2654435761 % 360)", () => {
-    // Hand-verified via BigInt arithmetic (avoids the Number precision
-    // loss that plain `*` hits once title_id * 2654435761 exceeds 2^53).
-    expect(hashHue(0)).toBe(0);
-    expect(hashHue(1)).toBe(241);
-    expect(hashHue(2)).toBe(122);
-    expect(hashHue(12345)).toBe(105);
+  it("matches FNV-1a 32-bit over the UTF-8 bytes, mod 360", () => {
+    // FNV-1a("series-1399") = 3734960789; 3734960789 % 360 = 29.
+    expect(hashHue("series-1399")).toBe(29);
+    expect(hashHue("series-1400")).toBe(306);
   });
 
   it("always returns an integer in [0, 360)", () => {
-    for (const id of [0, 1, 2, 3, 4, 5, 1000, 95396, 666277, 999999]) {
+    for (const id of ["", "movie-1", "series-1399", "movie-666277", "ünï-☃"]) {
       const hue = hashHue(id);
       expect(Number.isInteger(hue)).toBe(true);
       expect(hue).toBeGreaterThanOrEqual(0);
@@ -37,12 +33,10 @@ describe("hashHue", () => {
     }
   });
 
-  it("gives different title_ids different hues (well distributed, not proof of no collisions)", () => {
-    const hues = new Set([1, 2, 3, 4, 5].map(hashHue));
-    expect(hues.size).toBeGreaterThan(1);
+  it("gives different title ids different hues", () => {
+    expect(hashHue("series-1399")).not.toBe(hashHue("series-1400"));
   });
 });
-
 
 describe("rgbToHsl", () => {
   it("converts primary colors", () => {
@@ -155,15 +149,15 @@ describe("classifyPlate", () => {
 describe("posterHue", () => {
   it("resolves to the extractor's hue on success", async () => {
     const extract = vi.fn().mockResolvedValue(200);
-    const hue = await posterHue(101, "/poster.jpg", extract);
+    const hue = await posterHue("movie-101", "/poster.jpg", extract);
     expect(hue).toBe(200);
     expect(extract).toHaveBeenCalledTimes(1);
   });
 
   it("memoizes: a second call for the same title_id does not re-invoke the extractor", async () => {
     const extract = vi.fn().mockResolvedValue(55);
-    await posterHue(102, "/poster.jpg", extract);
-    const second = await posterHue(102, "/poster.jpg", extract);
+    await posterHue("movie-102", "/poster.jpg", extract);
+    const second = await posterHue("movie-102", "/poster.jpg", extract);
     expect(second).toBe(55);
     expect(extract).toHaveBeenCalledTimes(1);
   });
@@ -175,8 +169,8 @@ describe("posterHue", () => {
     });
     const extract = vi.fn().mockReturnValue(pending);
 
-    const first = posterHue(103, "/poster.jpg", extract);
-    const second = posterHue(103, "/poster.jpg", extract);
+    const first = posterHue("movie-103", "/poster.jpg", extract);
+    const second = posterHue("movie-103", "/poster.jpg", extract);
     release(77);
 
     expect(await first).toBe(77);
@@ -186,18 +180,18 @@ describe("posterHue", () => {
 
   it("falls back to hashHue(title_id) when extraction fails, and caches the fallback", async () => {
     const extract = vi.fn().mockRejectedValue(new Error("decode error"));
-    const hue = await posterHue(104, "/poster.jpg", extract);
-    expect(hue).toBe(hashHue(104));
+    const hue = await posterHue("movie-104", "/poster.jpg", extract);
+    expect(hue).toBe(hashHue("movie-104"));
 
-    const second = await posterHue(104, "/poster.jpg", extract);
-    expect(second).toBe(hashHue(104));
+    const second = await posterHue("movie-104", "/poster.jpg", extract);
+    expect(second).toBe(hashHue("movie-104"));
     expect(extract).toHaveBeenCalledTimes(1); // not retried
   });
 
   it("falls back to hashHue(title_id) without calling the extractor when poster_path is empty", async () => {
     const extract = vi.fn();
-    const hue = await posterHue(105, "", extract);
-    expect(hue).toBe(hashHue(105));
+    const hue = await posterHue("movie-105", "", extract);
+    expect(hue).toBe(hashHue("movie-105"));
     expect(extract).not.toHaveBeenCalled();
   });
 });
@@ -208,7 +202,7 @@ describe("posterHue", () => {
 
 describe("peekPosterHue", () => {
   it("returns null for a title_id that has never been requested", () => {
-    expect(peekPosterHue(999101)).toBeNull();
+    expect(peekPosterHue("movie-999101")).toBeNull();
   });
 
   it("returns null while extraction is still in flight (never observes a pending promise)", async () => {
@@ -218,8 +212,8 @@ describe("peekPosterHue", () => {
     });
     const extract = vi.fn().mockReturnValue(pending);
 
-    const inFlight = posterHue(106, "/poster.jpg", extract);
-    expect(peekPosterHue(106)).toBeNull();
+    const inFlight = posterHue("movie-106", "/poster.jpg", extract);
+    expect(peekPosterHue("movie-106")).toBeNull();
 
     release(88);
     await inFlight;
@@ -227,14 +221,14 @@ describe("peekPosterHue", () => {
 
   it("returns the resolved hue once the corresponding posterHue call has completed", async () => {
     const extract = vi.fn().mockResolvedValue(150);
-    await posterHue(107, "/poster.jpg", extract);
-    expect(peekPosterHue(107)).toBe(150);
+    await posterHue("movie-107", "/poster.jpg", extract);
+    expect(peekPosterHue("movie-107")).toBe(150);
   });
 
   it("returns the resolved fallback hue once a failed extraction has completed", async () => {
     const extract = vi.fn().mockRejectedValue(new Error("decode error"));
-    await posterHue(108, "/poster.jpg", extract);
-    expect(peekPosterHue(108)).toBe(hashHue(108));
+    await posterHue("movie-108", "/poster.jpg", extract);
+    expect(peekPosterHue("movie-108")).toBe(hashHue("movie-108"));
   });
 });
 

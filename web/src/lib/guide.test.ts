@@ -21,20 +21,20 @@ import {
 // (provider 8); day 2 is a night off. Title 5 is missing from the
 // sidecar (fallback path).
 const g: GuideResponse = {
-  id: 1,
+  id: "i1",
   start_date: "2026-07-20",
   end_date: "2026-07-21",
   seed: 42,
   items: [
-    { id: 11, date: "2026-07-20", start_min: 1200, end_min: 1320, title_id: 1, season: 0, episode: 0, provider_id: 8, is_plan: true, pinned: false, edited: false, watched: false },
-    { id: 12, date: "2026-07-20", start_min: 1290, end_min: 1350, title_id: 2, season: 2, episode: 5, provider_id: 9, is_plan: true, pinned: true, edited: false, watched: true },
-    { id: 13, date: "2026-07-20", start_min: 1200, end_min: 1260, title_id: 3, season: 1, episode: 3, provider_id: 9, is_plan: false, pinned: false, edited: false, watched: false },
-    { id: 14, date: "2026-07-20", start_min: 1290, end_min: 1350, title_id: 5, season: 4, episode: 1, provider_id: 8, is_plan: false, pinned: false, edited: false, watched: false },
+    { id: "i11", date: "2026-07-20", start_min: 1200, end_min: 1320, title_id: "t1", season: 0, episode: 0, provider_id: 8, is_plan: true, pinned: false, edited: false, watched: false },
+    { id: "i12", date: "2026-07-20", start_min: 1290, end_min: 1350, title_id: "t2", season: 2, episode: 5, provider_id: 9, is_plan: true, pinned: true, edited: false, watched: true },
+    { id: "i13", date: "2026-07-20", start_min: 1200, end_min: 1260, title_id: "t3", season: 1, episode: 3, provider_id: 9, is_plan: false, pinned: false, edited: false, watched: false },
+    { id: "i14", date: "2026-07-20", start_min: 1290, end_min: 1350, title_id: "t5", season: 4, episode: 1, provider_id: 8, is_plan: false, pinned: false, edited: false, watched: false },
   ],
   titles: {
-    "1": { name: "Past Lives", kind: "movie", tmdb_id: 666277, poster_path: "/pl.jpg" },
-    "2": { name: "Severance", kind: "series", tmdb_id: 95396, poster_path: "/sev.jpg" },
-    "3": { name: "Slow Horses", kind: "series", tmdb_id: 95480, poster_path: "/sh.jpg" },
+    "t1": { name: "Past Lives", kind: "movie", tmdb_id: 666277, poster_path: "/pl.jpg" },
+    "t2": { name: "Severance", kind: "series", tmdb_id: 95396, poster_path: "/sev.jpg" },
+    "t3": { name: "Slow Horses", kind: "series", tmdb_id: 95480, poster_path: "/sh.jpg" },
   },
   providers: {
     "8": { id: 8, name: "Netflix", logo_path: "/n.jpg" },
@@ -61,11 +61,11 @@ describe("monthDay", () => {
 
 describe("epLabel", () => {
   const baseItem: GuideItem = {
-    id: 1,
+    id: "i1",
     date: "2026-07-20",
     start_min: 1200,
     end_min: 1260,
-    title_id: 2,
+    title_id: "t2",
     season: 2,
     episode: 5,
     provider_id: 9,
@@ -103,7 +103,7 @@ describe("toCalendarColumns", () => {
   });
 
   it("keeps plan items only, sorted by start", () => {
-    expect(cols[0].slots.map((s) => s.item.id)).toEqual([11, 12]);
+    expect(cols[0].slots.map((s) => s.item.id)).toEqual(["i11", "i12"]);
     expect(cols[1].slots).toEqual([]);
   });
 
@@ -136,8 +136,8 @@ describe("toBoardRows", () => {
   it("gives alternates a swap target (the plan item sharing their slot)", () => {
     const apple = day.rows.find((r) => r.providerName === "Apple TV+")!;
     const netflix = day.rows.find((r) => r.providerName === "Netflix")!;
-    expect((apple.cells[0] as { swapTargetId?: number }).swapTargetId).toBe(11);
-    expect((netflix.cells[1] as { swapTargetId?: number }).swapTargetId).toBe(12);
+    expect((apple.cells[0] as { swapTargetId?: string }).swapTargetId).toBe("i11");
+    expect((netflix.cells[1] as { swapTargetId?: string }).swapTargetId).toBe("i12");
   });
 
   it("falls back for missing sidecar entries", () => {
@@ -159,7 +159,7 @@ describe("toBoardRows", () => {
 
 function gi(over: Partial<GuideItem>): GuideItem {
   return {
-    id: 1, date: "2026-07-20", start_min: 1140, end_min: 1200, title_id: 1,
+    id: "i1", date: "2026-07-20", start_min: 1140, end_min: 1200, title_id: "t1",
     season: 1, episode: 1, provider_id: 8, is_plan: true, pinned: false,
     edited: false, watched: false, ...over,
   };
@@ -268,16 +268,16 @@ describe("snapDragDelta", () => {
 describe("layoutDayColumns", () => {
   it("gives every non-overlapping item colCount 1", () => {
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 1080, end_min: 1140 }),
-      gi({ id: 2, start_min: 1140, end_min: 1200 }), // touches edge — not overlap
+      gi({ id: "i1", start_min: 1080, end_min: 1140 }),
+      gi({ id: "i2", start_min: 1140, end_min: 1200 }), // touches edge — not overlap
     ]);
     expect(out.every((o) => o.colCount === 1 && o.colIndex === 0)).toBe(true);
   });
 
   it("splits two overlapping items into two columns", () => {
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 1080, end_min: 1200 }),
-      gi({ id: 2, start_min: 1140, end_min: 1260 }),
+      gi({ id: "i1", start_min: 1080, end_min: 1200 }),
+      gi({ id: "i2", start_min: 1140, end_min: 1260 }),
     ]);
     expect(out.map((o) => o.colCount)).toEqual([2, 2]);
     expect(out.map((o) => o.colIndex).sort()).toEqual([0, 1]);
@@ -286,29 +286,29 @@ describe("layoutDayColumns", () => {
   it("packs a third non-overlapping-with-first item back into column 0", () => {
     // A[0-120] overlaps B[60-180]; C[120-180] starts when A ends -> reuses A's column
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 0, end_min: 120 }),
-      gi({ id: 2, start_min: 60, end_min: 180 }),
-      gi({ id: 3, start_min: 120, end_min: 180 }),
+      gi({ id: "i1", start_min: 0, end_min: 120 }),
+      gi({ id: "i2", start_min: 60, end_min: 180 }),
+      gi({ id: "i3", start_min: 120, end_min: 180 }),
     ]);
     const byId = new Map(out.map((o) => [o.item.id, o]));
-    expect(byId.get(1)!.colCount).toBe(2);
-    expect(byId.get(3)!.colIndex).toBe(0); // reused column A vacated
+    expect(byId.get("i1")!.colCount).toBe(2);
+    expect(byId.get("i3")!.colIndex).toBe(0); // reused column A vacated
   });
 
   it("keeps a separate non-overlapping cluster at colCount 1", () => {
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 0, end_min: 60 }),
-      gi({ id: 2, start_min: 30, end_min: 90 }), // cluster A (2 cols)
-      gi({ id: 3, start_min: 600, end_min: 660 }), // cluster B alone
+      gi({ id: "i1", start_min: 0, end_min: 60 }),
+      gi({ id: "i2", start_min: 30, end_min: 90 }), // cluster A (2 cols)
+      gi({ id: "i3", start_min: 600, end_min: 660 }), // cluster B alone
     ]);
-    expect(out.find((o) => o.item.id === 3)!.colCount).toBe(1);
+    expect(out.find((o) => o.item.id === "i3")!.colCount).toBe(1);
   });
 
   it("gives three mutually-overlapping items colCount 3", () => {
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 0, end_min: 90 }),
-      gi({ id: 2, start_min: 30, end_min: 120 }),
-      gi({ id: 3, start_min: 60, end_min: 150 }),
+      gi({ id: "i1", start_min: 0, end_min: 90 }),
+      gi({ id: "i2", start_min: 30, end_min: 120 }),
+      gi({ id: "i3", start_min: 60, end_min: 150 }),
     ]);
     expect(out.map((o) => o.colCount)).toEqual([3, 3, 3]);
     expect(out.map((o) => o.colIndex).sort()).toEqual([0, 1, 2]);
@@ -317,19 +317,19 @@ describe("layoutDayColumns", () => {
   it("keeps a non-transitive chain (A-B, B-C, not A-C) as one cluster at peak concurrency 2", () => {
     // A[0-60] overlaps B[45-105]; B overlaps C[90-150]; A and C do not overlap.
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 0, end_min: 60 }),
-      gi({ id: 2, start_min: 45, end_min: 105 }),
-      gi({ id: 3, start_min: 90, end_min: 150 }),
+      gi({ id: "i1", start_min: 0, end_min: 60 }),
+      gi({ id: "i2", start_min: 45, end_min: 105 }),
+      gi({ id: "i3", start_min: 90, end_min: 150 }),
     ]);
     expect(out.every((o) => o.colCount === 2)).toBe(true); // peak concurrency 2, not 3
-    expect(out.find((o) => o.item.id === 3)!.colIndex).toBe(0); // reuses A's vacated column
+    expect(out.find((o) => o.item.id === "i3")!.colIndex).toBe(0); // reuses A's vacated column
   });
 
   it("splits a chain of touching-edge items into isolated single columns", () => {
     const out = layoutDayColumns([
-      gi({ id: 1, start_min: 0, end_min: 60 }),
-      gi({ id: 2, start_min: 60, end_min: 120 }),
-      gi({ id: 3, start_min: 120, end_min: 180 }),
+      gi({ id: "i1", start_min: 0, end_min: 60 }),
+      gi({ id: "i2", start_min: 60, end_min: 120 }),
+      gi({ id: "i3", start_min: 120, end_min: 180 }),
     ]);
     expect(out.every((o) => o.colCount === 1 && o.colIndex === 0)).toBe(true);
   });
@@ -337,11 +337,11 @@ describe("layoutDayColumns", () => {
 
 describe("toTimeGrid", () => {
   const g: GuideResponse = {
-    id: 1, start_date: "2026-07-20", end_date: "2026-07-21", seed: 0,
+    id: "i1", start_date: "2026-07-20", end_date: "2026-07-21", seed: 0,
     items: [
-      gi({ id: 1, date: "2026-07-20", start_min: 1110, end_min: 1200 }), // 18:30-20:00
-      gi({ id: 2, date: "2026-07-21", start_min: 1230, end_min: 1350 }), // 20:30-22:30
-      gi({ id: 3, date: "2026-07-20", start_min: 0, end_min: 60, is_plan: false }), // alternate: ignored
+      gi({ id: "i1", date: "2026-07-20", start_min: 1110, end_min: 1200 }), // 18:30-20:00
+      gi({ id: "i2", date: "2026-07-21", start_min: 1230, end_min: 1350 }), // 20:30-22:30
+      gi({ id: "i3", date: "2026-07-20", start_min: 0, end_min: 60, is_plan: false }), // alternate: ignored
     ],
     titles: { "1": { name: "A", kind: "series", tmdb_id: 1, poster_path: "" } },
     providers: { "8": { id: 8, name: "Netflix", logo_path: "" } },

@@ -185,7 +185,7 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
   useEffect(() => () => document.body.removeAttribute("data-dragging"), []);
 
   function handleDragStart(event: DragStartEvent) {
-    const id = Number(event.active.id);
+    const id = String(event.active.id);
     const gi = grid.days.flatMap((d) => d.items).find((g) => g.item.id === id) ?? null;
     if (!gi) return;
     setActive(gi);

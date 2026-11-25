@@ -9,7 +9,7 @@ import type { GuideItem, GuideTitleLookup } from "@/lib/types";
 export const GENERIC_ERROR = "Couldn't save — try again.";
 
 export type UseGuideItemMutationsParams = {
-  guideId: number;
+  guideId: string;
   item: GuideItem;
   title: GuideTitleLookup;
   // The column the item currently renders in, needed only for the Pin
@@ -26,7 +26,7 @@ export function useGuideItemMutations({ guideId, item, title, columnDow }: UseGu
   const { show } = useToast();
 
   const invalidateGuide = () => queryClient.invalidateQueries({ queryKey: ["guide"] });
-  const itemPath = `/v1/guides/${guideId}/items/${item.id}`;
+  const itemPath = `/v1/guides/${encodeURIComponent(guideId)}/items/${encodeURIComponent(item.id)}`;
 
   const watchedM = useMutation({
     mutationFn: () => api(`${itemPath}/watched`, { method: item.watched ? "DELETE" : "POST" }),
