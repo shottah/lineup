@@ -40,7 +40,9 @@ func New(d Deps) *http.Server {
 		MaxAge:         300,
 	}))
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	// Not /healthz: Cloud Run's front end reserves paths ending in "z" and
+	// answers them with its own 404 before the request reaches the app.
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ok":true}`))
 	})

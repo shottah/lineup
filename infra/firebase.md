@@ -18,11 +18,16 @@ The project was soft-deleted and restored on 2026-07-08. Firebase enablement
 the project as alive. BOTH must pass (the original third check, the `lineup-db` disk, no longer applies: the VM was retired on 2026-11-25):
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://lineup-api-zzwkjc5sdq-uc.a.run.app/healthz   # want: 200
+curl -s -o /dev/null -w '%{http_code}\n' https://lineup-api-zzwkjc5sdq-uc.a.run.app/health    # want: 200
 docker pull us-central1-docker.pkg.dev/lineup-app-ae6b/api/api:1830fa4                        # want: pull succeeds
 ```
 
 Any failure = still propagating; wait and re-run. Do not proceed partially.
+
+The health route is `/health`, not `/healthz`: Cloud Run's front end
+reserves paths ending in `z` and returns its own HTML 404 for them without
+reaching the app (confirmed 2026-11-25). An HTML 404 from `/healthz` is not
+an outage.
 
 TCP-wedge caveat (see `.superpowers/sdd/progress.md`, 2026-07-05 diagnosis):
 this project previously had a Google-side fault where run.app hostnames were
