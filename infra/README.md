@@ -23,27 +23,31 @@ If the project is being re-created under a new project id, run these in order:
 
    The script detects the currently-targeted id from `clouddeploy.yaml`, so it is
    the single source of truth. It warns about any remaining occurrences elsewhere
-   under `infra/` (e.g. `infra/db/`) for manual review.
+   under `infra/` for manual review.
 1. `bash infra/bootstrap.sh <NEW_PROJECT_ID> <BILLING_ACCOUNT_ID>` (project, APIs, repo, secrets, SA)
-2. `bash infra/db/create-vm.sh` (Postgres VM — must exist before step 3, which reads its internal IP)
-3. `gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project <NEW_PROJECT_ID>` then `bash infra/create-trigger.sh` (pipeline, IAM, database-url secret, trigger)
+2. `gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project <NEW_PROJECT_ID>` then `bash infra/create-trigger.sh` (pipeline, IAM, trigger)
+
+> **Database migration in progress.** The self-hosted Postgres VM (`lineup-db`)
+> and its firewall rules and backup bucket were retired on 2026-11-25. The API
+> is moving to Cloud Firestore; until that cutover lands, `run-service.yaml`
+> still references the legacy `database-url` secret and new API revisions fail
+> at boot.
 
 ## What `bootstrap.sh` provisions
 
 Running the script against the project ID above (idempotent — safe to re-run):
 
 - Creates the GCP project (if it doesn't already exist) and links it to the given billing account
-- Enables the required APIs: Cloud Run, Cloud Build, Cloud Deploy, Artifact Registry, Secret Manager, Compute Engine, IAP, Firebase, Identity Toolkit, Firebase App Hosting
+- Enables the required APIs: Cloud Run, Cloud Build, Cloud Deploy, Artifact Registry, Secret Manager, Compute Engine, Firebase, Identity Toolkit, Firebase App Hosting
 - Creates an Artifact Registry Docker repo named `api` in `us-central1`
-- Creates two Secret Manager secrets:
-  - `db-password` — auto-generated random value (24 bytes, base64)
+- Creates a Secret Manager secret:
   - `tmdb-read-token` — placeholder value `REPLACE_ME` (see manual step below)
 - Creates a service account `api-runtime@<PROJECT_ID>.iam.gserviceaccount.com`
 - Grants `api-runtime@` the `roles/secretmanager.secretAccessor` role at the project level
 
 ## Running it
 
-Requires `gcloud` authenticated as a principal with permission to create projects and link billing (e.g. `gcloud auth login`), and the `openssl` CLI.
+Requires `gcloud` authenticated as a principal with permission to create projects and link billing (e.g. `gcloud auth login`).
 
 ```bash
 bash infra/bootstrap.sh <PROJECT_ID> <BILLING_ACCOUNT_ID>
@@ -64,8 +68,8 @@ The script is idempotent: every resource-creation step first checks whether the 
 Files: `cloudbuild.yaml` (test, build, push, create release), `clouddeploy.yaml`
 (DeliveryPipeline `lineup-api` -> Target `prod`), `skaffold.yaml` +
 `run-service.yaml` (Cloud Run service manifest rendered by the Cloud Run
-skaffold deployer), `create-trigger.sh` (idempotent IAM grants, `database-url`
-secret, GitHub connection + trigger).
+skaffold deployer), `create-trigger.sh` (idempotent IAM grants, GitHub
+connection + trigger).
 
 One-time setup (idempotent, safe to re-run):
 
@@ -74,9 +78,7 @@ gcloud deploy apply --file=infra/clouddeploy.yaml --region=us-central1 --project
 bash infra/create-trigger.sh
 ```
 
-`create-trigger.sh` creates the `database-url` secret from `db-password` and the
-`lineup-db` VM internal IP without ever printing the password (the secret value
-is piped straight between gcloud invocations). If the 2nd-gen GitHub connection
+If the 2nd-gen GitHub connection
 is not yet authorized, the script prints the one-time console OAuth/App-install
 URL and stops before trigger creation; complete that step in a browser and
 re-run the script.

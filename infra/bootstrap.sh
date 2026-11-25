@@ -7,12 +7,10 @@ gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1 || gcloud projects create
 gcloud billing projects link "$PROJECT_ID" --billing-account="$BILLING"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com clouddeploy.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com compute.googleapis.com \
-  iap.googleapis.com firebase.googleapis.com identitytoolkit.googleapis.com \
+  firebase.googleapis.com identitytoolkit.googleapis.com \
   firebaseapphosting.googleapis.com --project "$PROJECT_ID"
 gcloud artifacts repositories describe api --location=$REGION --project "$PROJECT_ID" >/dev/null 2>&1 || \
   gcloud artifacts repositories create api --repository-format=docker --location=$REGION --project "$PROJECT_ID"
-gcloud secrets describe db-password --project "$PROJECT_ID" >/dev/null 2>&1 || \
-  (openssl rand -base64 24 | tr -d '\n' | gcloud secrets create db-password --data-file=- --project "$PROJECT_ID")
 gcloud secrets describe tmdb-read-token --project "$PROJECT_ID" >/dev/null 2>&1 || \
   (printf 'REPLACE_ME' | gcloud secrets create tmdb-read-token --data-file=- --project "$PROJECT_ID")
 gcloud iam service-accounts describe api-runtime@"$PROJECT_ID".iam.gserviceaccount.com --project "$PROJECT_ID" >/dev/null 2>&1 || \

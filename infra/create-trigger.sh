@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # Idempotent setup for the Cloud Build -> Artifact Registry -> Cloud Deploy -> Cloud Run
-# pipeline: IAM grants for the build/deploy chain, the `database-url` secret, and the
-# GitHub trigger (via a 2nd-gen Cloud Build GitHub connection).
+# pipeline: IAM grants for the build/deploy chain and the GitHub trigger (via a
+# 2nd-gen Cloud Build GitHub connection).
 #
-# Ordering: infra/bootstrap.sh and infra/db/create-vm.sh must have run first (this
-# script reads the db-password secret and the lineup-db VM's internal IP).
+# Ordering: infra/bootstrap.sh must have run first.
 #
 # Safe to re-run: every step checks current state before mutating anything.
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-lineup-app-ae6b}"
 REGION="${REGION:-us-central1}"
-ZONE="${ZONE:-us-central1-a}"
 CONNECTION_NAME="${CONNECTION_NAME:-lineup-github}"
 REPO_ID="${REPO_ID:-lineup}"
 REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/shottah/lineup.git}"
@@ -89,31 +87,7 @@ gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
   --member="serviceAccount:${EXEC_SA}" --role=roles/iam.serviceAccountUser \
   --project="$PROJECT_ID" -q >/dev/null
 
-echo "== 3. database-url secret =="
-# Built from db-password (created by infra/bootstrap.sh) + the lineup-db VM's
-# internal IP (resolved live, never hardcoded). The password is never printed: it
-# flows from `gcloud secrets versions access` straight into `printf` and then into
-# `gcloud secrets create --data-file=-` over a pipe, so it never appears in argv,
-# logs, or shell history.
-if ! gcloud secrets describe database-url --project="$PROJECT_ID" >/dev/null 2>&1; then
-  DB_IP="$(gcloud compute instances describe lineup-db --zone "$ZONE" \
-    --project="$PROJECT_ID" --format='value(networkInterfaces[0].networkIP)' 2>/dev/null || true)"
-  if [[ -z "$DB_IP" ]]; then
-    echo "ERROR: could not resolve the internal IP of VM 'lineup-db' (zone $ZONE," >&2
-    echo "project $PROJECT_ID). The database VM must exist before the database-url" >&2
-    echo "secret can be built: run infra/db/create-vm.sh first, then re-run this" >&2
-    echo "script." >&2
-    exit 1
-  fi
-  printf 'postgres://lineup:%s@%s:5432/lineup?sslmode=disable' \
-    "$(gcloud secrets versions access latest --secret=db-password --project="$PROJECT_ID")" \
-    "$DB_IP" | \
-    gcloud secrets create database-url --data-file=- --project="$PROJECT_ID"
-fi
-# api-runtime already has project-level secretmanager.secretAccessor (bootstrap.sh),
-# which covers this new secret too.
-
-echo "== 4. GitHub connection (2nd-gen) =="
+echo "== 3. GitHub connection (2nd-gen) =="
 # Creating a fresh connection requires the Cloud Build P4SA to manage a Secret
 # Manager secret holding the OAuth token; grant that once, up front. Revoke it
 # after the connection reaches installationState COMPLETE -- see the manual-steps
@@ -150,7 +124,7 @@ if [[ "$CONN_STAGE" != "COMPLETE" ]]; then
   exit 0
 fi
 
-echo "== 5. Repository registration =="
+echo "== 4. Repository registration =="
 if ! gcloud builds repositories describe "$REPO_ID" --connection="$CONNECTION_NAME" \
     --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud builds repositories create "$REPO_ID" \
@@ -158,7 +132,7 @@ if ! gcloud builds repositories describe "$REPO_ID" --connection="$CONNECTION_NA
     --region="$REGION" --project="$PROJECT_ID" -q
 fi
 
-echo "== 6. Build trigger =="
+echo "== 5. Build trigger =="
 if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud builds triggers create github \

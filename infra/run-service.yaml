@@ -16,8 +16,6 @@ spec:
       annotations:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "2"
-        run.googleapis.com/network-interfaces: '[{"network":"default","subnetwork":"default"}]'
-        run.googleapis.com/vpc-access-egress: "private-ranges-only"
     spec:
       serviceAccountName: api-runtime@lineup-app-ae6b.iam.gserviceaccount.com
       containers:
@@ -27,6 +25,9 @@ spec:
           env:
             - name: FIREBASE_PROJECT_ID
               value: "lineup-app-ae6b"
+            # Transitional: the Postgres VM is retired and the API is moving to
+            # Firestore. This env var (and the database-url secret) is removed in
+            # the Firestore cutover; until then new revisions fail at boot.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
