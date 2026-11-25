@@ -1152,3 +1152,54 @@ func TestGuideLookups(t *testing.T) {
 		t.Fatalf("unknown guide lookups = %+v/%+v, want empty", emptyTitles, emptyProvs)
 	}
 }
+
+// TestGuideCrossUserIsolation: user B, holding user A's guide and item IDs,
+// gets ErrGuideNotFound from every guide-scoped operation, and A's guide is
+// left byte-for-byte unchanged.
+func TestGuideCrossUserIsolation(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	userA, seriesID, movieID := seedGuideWorld(t, s)
+	userB := seedUser(t, s)
+
+	g, err := s.CreateGuideReplacingOverlaps(ctx, userA, "2026-03-02", "2026-03-08", 7, []guide.Item{
+		{Date: "2026-03-02", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true},
+		{Date: "2026-03-03", StartMin: 1140, EndMin: 1260, TitleID: movieID, Provider: 902, IsPlan: true},
+	})
+	if err != nil {
+		t.Fatalf("create A's guide: %v", err)
+	}
+	itemID := g.Items[0].ID
+	before, err := s.GuideWithItems(ctx, userA, g.ID)
+	if err != nil {
+		t.Fatalf("load A's guide: %v", err)
+	}
+
+	pt, nd, ns := true, "2026-03-05", 600
+	checks := map[string]error{}
+	_, checks["GuideWithItems"] = s.GuideWithItems(ctx, userB, g.ID)
+	_, checks["UpdateGuideItem/pin"] = s.UpdateGuideItem(ctx, userB, g.ID, itemID, GuideItemUpdate{Pinned: &pt})
+	_, checks["UpdateGuideItem/move"] = s.UpdateGuideItem(ctx, userB, g.ID, itemID, GuideItemUpdate{Date: &nd, StartMin: &ns, SetEdited: true})
+	_, checks["MarkItemWatched"] = s.MarkItemWatched(ctx, userB, g.ID, itemID)
+	_, checks["UnmarkItemWatched"] = s.UnmarkItemWatched(ctx, userB, g.ID, itemID)
+	_, checks["ReplaceUnkeptItems"] = s.ReplaceUnkeptItems(ctx, userB, g.ID, nil, nil, 99)
+	checks["DeleteGuideItem"] = s.DeleteGuideItem(ctx, userB, g.ID, itemID)
+	for op, err := range checks {
+		if !errors.Is(err, ErrGuideNotFound) {
+			t.Errorf("%s as user B: err = %v, want ErrGuideNotFound", op, err)
+		}
+	}
+
+	// B's "current guide" for a date inside A's range must not be A's guide.
+	if cur, err := s.CurrentGuide(ctx, userB, "2026-03-04"); !errors.Is(err, ErrGuideNotFound) {
+		t.Errorf("CurrentGuide as user B = %+v, %v; want ErrGuideNotFound", cur, err)
+	}
+
+	after, err := s.GuideWithItems(ctx, userA, g.ID)
+	if err != nil {
+		t.Fatalf("reload A's guide: %v", err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("A's guide changed after B's attempts:\nbefore=%+v\nafter=%+v", before, after)
+	}
+}
