@@ -316,3 +316,78 @@ func (s *Store) ReplaceFutureAirings(ctx context.Context, titleID, today string,
 			}, nil
 		})
 }
+
+// TitleFull is the title-page payload.
+type TitleFull struct {
+	Title     Title         `json:"title"`
+	Seasons   []SeasonRow   `json:"seasons"`
+	Providers []ProviderRow `json:"providers"`
+	Entry     *Entry        `json:"entry"`
+}
+
+// GetTitleFull assembles the title-page payload: title, seasons, the
+// region's providers (sorted by name, hydrated from providers/{id}), and the
+// caller's entry (nil when absent). An unknown or invalid titleID returns
+// ErrTitleNotFound.
+func (s *Store) GetTitleFull(ctx context.Context, userID, titleID, region string) (*TitleFull, error) {
+	if !validID(titleID) {
+		return nil, ErrTitleNotFound
+	}
+	tm, err := s.getTitles(ctx, []string{titleID})
+	if err != nil {
+		return nil, fmt.Errorf("docstore: title full: %w", err)
+	}
+	td := tm[titleID]
+	if td == nil {
+		return nil, ErrTitleNotFound
+	}
+	full := &TitleFull{Title: *td.title(titleID), Seasons: seasonRows(td.Seasons), Providers: []ProviderRow{}}
+
+	if pids := td.Providers[region]; len(pids) > 0 {
+		refs := make([]*firestore.DocumentRef, len(pids))
+		for i, id := range pids {
+			refs[i] = s.c.Collection("providers").Doc(strconv.FormatInt(id, 10))
+		}
+		snaps, err := s.c.GetAll(ctx, refs)
+		if err != nil {
+			return nil, fmt.Errorf("docstore: title full: providers: %w", err)
+		}
+		for _, snap := range snaps {
+			if !snap.Exists() {
+				continue
+			}
+			var p ProviderRow
+			if err := snap.DataTo(&p); err != nil {
+				return nil, fmt.Errorf("docstore: title full: providers: %w", err)
+			}
+			id, err := strconv.ParseInt(snap.Ref.ID, 10, 64)
+			if err != nil {
+				continue
+			}
+			p.ID = id
+			full.Providers = append(full.Providers, p)
+		}
+		sort.Slice(full.Providers, func(i, j int) bool {
+			if full.Providers[i].Name != full.Providers[j].Name {
+				return full.Providers[i].Name < full.Providers[j].Name
+			}
+			return full.Providers[i].ID < full.Providers[j].ID
+		})
+	}
+
+	if validID(userID) {
+		esnap, err := s.entries(userID).Doc(titleID).Get(ctx)
+		if err != nil && !isNotFound(err) {
+			return nil, fmt.Errorf("docstore: title full: entry: %w", err)
+		}
+		if err == nil {
+			var d entryDoc
+			if err := esnap.DataTo(&d); err != nil {
+				return nil, fmt.Errorf("docstore: title full: entry: %w", err)
+			}
+			d.TitleID = titleID
+			full.Entry = d.entry(td)
+		}
+	}
+	return full, nil
+}
