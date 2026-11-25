@@ -10,7 +10,7 @@ import { hashHue, peekPosterHue, posterHue } from "./posterTint";
 // deterministic hash if nothing's resolved yet — so first paint is never
 // blocked on image decode. The effect then (re-)runs the async
 // canvas-extraction upgrade and re-renders once it resolves.
-export function usePosterHue(titleId: number, posterPath: string): number {
+export function usePosterHue(titleId: string, posterPath: string): number {
   // React's "adjust state during render" pattern (not an effect) for
   // resyncing when a component instance is reused for a different
   // title_id without unmounting — e.g. BoardView swapping a new title

@@ -41,7 +41,7 @@ function GuideView({ guide, today }: { guide: GuideResponse; today: string }) {
 
   const regenerate = useMutation({
     mutationFn: () =>
-      api<GuideResponse>(`/v1/guides/${guide.id}/regenerate`, { method: "POST" }),
+      api<GuideResponse>(`/v1/guides/${encodeURIComponent(guide.id)}/regenerate`, { method: "POST" }),
     onError: () => show("Couldn't save — try again."),
     onSuccess: () => {
       show("Re-planned your remaining evenings — watched and pinned stayed put");

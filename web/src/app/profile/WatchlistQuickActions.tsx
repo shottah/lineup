@@ -18,7 +18,7 @@ export function WatchlistQuickActions({ entry }: { entry: Entry }) {
 
   const mutation = useMutation({
     mutationFn: (patch: EntryPatch) =>
-      api<Entry>(`/v1/titles/${entry.title_id}/entry`, {
+      api<Entry>(`/v1/titles/${encodeURIComponent(entry.title_id)}/entry`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),

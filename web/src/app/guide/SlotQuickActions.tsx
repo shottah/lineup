@@ -5,7 +5,7 @@ import type { GuideItem, GuideTitleLookup } from "@/lib/types";
 import { useGuideItemMutations } from "./useGuideItemMutations";
 
 export type SlotQuickActionsProps = {
-  guideId: number;
+  guideId: string;
   item: GuideItem;
   title: GuideTitleLookup;
   // The column the card currently renders in, needed only for the Pin
