@@ -89,18 +89,22 @@ func (s *Store) UpsertUserByFirebaseUID(ctx context.Context, uid, email, display
 				return err
 			}
 			var ups []firestore.Update
-			if email != "" {
+			if email != "" && email != d.Email {
 				d.Email = email
 				ups = append(ups, firestore.Update{Path: "email", Value: email})
 			}
-			if displayName != "" {
+			if displayName != "" && displayName != d.DisplayName {
 				d.DisplayName = displayName
 				ups = append(ups, firestore.Update{Path: "displayName", Value: displayName})
 			}
-			d.UpdatedAt = now
-			ups = append(ups, firestore.Update{Path: "updatedAt", Value: now})
-			if err := tx.Update(ref, ups); err != nil {
-				return err
+			// Only genuine refreshes write, so concurrent unchanged logins
+			// do not contend on the same document.
+			if len(ups) > 0 {
+				d.UpdatedAt = now
+				ups = append(ups, firestore.Update{Path: "updatedAt", Value: now})
+				if err := tx.Update(ref, ups); err != nil {
+					return err
+				}
 			}
 		}
 		u, err := d.user(uid)
