@@ -6,7 +6,7 @@
 %%
 %% Conventions
 %%   - One class per document or collection; fields are camelCase.
-%%   - Class name carries the document path.
+%%   - Document paths are given in notes (note for <Class>), not in class bodies.
 %%   - Composition (*--) marks subcollections or embedded data that cannot
 %%     outlive the parent document; dashed arrows are ID references only.
 %%   - Dates are YYYY-MM-DD strings; timestamps are Firestore timestamps.
@@ -15,7 +15,6 @@ classDiagram
     direction TB
 
     class User {
-        <<users/{firebaseUid}>>
         +string email
         +string displayName
         +string region
@@ -37,7 +36,6 @@ classDiagram
     }
 
     class Entry {
-        <<users/{uid}/entries/{titleId}>>
         +string titleId
         +string status
         +number rating
@@ -49,7 +47,6 @@ classDiagram
     }
 
     class Guide {
-        <<users/{uid}/guides/{guideId}>>
         +string startDate
         +string endDate
         +number seed
@@ -74,7 +71,6 @@ classDiagram
     }
 
     class Title {
-        <<titles/{kind}-{tmdbId}>>
         +string kind
         +number tmdbId
         +number tvmazeId
@@ -99,7 +95,6 @@ classDiagram
     }
 
     class Provider {
-        <<providers/{providerId}>>
         +string name
         +string logoPath
     }
@@ -116,6 +111,11 @@ classDiagram
     GuideItem "0..*" ..> "1" Provider : providerId
     Title "0..*" ..> "0..*" Provider : providers map, region to provider IDs
 
+    note for User "users/{firebaseUid}"
+    note for Entry "users/{uid}/entries/{titleId}"
+    note for Guide "users/{uid}/guides/{guideId}"
+    note for Title "titles/{kind}-{tmdbId}"
+    note for Provider "providers/{providerId}"
     note for Title "kind: movie | series; ID is kind-tmdbId (series-1399)
 seasons: season number (string key) -> episode count
 providers: region -> sorted provider IDs
