@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shottah/lineup/api/internal/store"
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/tmdb"
 	"github.com/shottah/lineup/api/internal/tvmaze"
 )
@@ -40,13 +40,13 @@ type AiringsClient interface {
 	Episodes(ctx context.Context, showID int) ([]tvmaze.Episode, error)
 }
 
-// TitleStore is the slice of *store.Store ingestion needs.
+// TitleStore is the slice of *docstore.Store ingestion needs.
 type TitleStore interface {
-	GetTitleByTMDB(ctx context.Context, kind string, tmdbID int64) (*store.Title, error)
-	UpsertTitle(ctx context.Context, u store.TitleUpsert) (*store.Title, error)
-	ReplaceSeasons(ctx context.Context, titleID int64, seasons []store.SeasonRow) error
-	ReplaceProviders(ctx context.Context, titleID int64, region string, provs []store.ProviderRow) error
-	ReplaceFutureAirings(ctx context.Context, titleID int64, today string, airs []store.AiringRow) error
+	GetTitleByTMDB(ctx context.Context, kind string, tmdbID int64) (*docstore.Title, error)
+	UpsertTitle(ctx context.Context, u docstore.TitleUpsert) (*docstore.Title, error)
+	ReplaceSeasons(ctx context.Context, titleID string, seasons []docstore.SeasonRow) error
+	ReplaceProviders(ctx context.Context, titleID, region string, provs []docstore.ProviderRow) error
+	ReplaceFutureAirings(ctx context.Context, titleID, today string, airs []docstore.AiringRow) error
 }
 
 // Service orchestrates EnsureTitle. Now is injectable for TTL tests; nil
@@ -75,7 +75,7 @@ func (s *Service) stale(stamp time.Time, ttl time.Duration) bool {
 // upstream failure during a refresh — including a TMDB 404 — serves the
 // cached row unchanged. Only a fresh ingest can fail on upstream errors,
 // because there is nothing cached to fall back to.
-func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, region string) (*store.Title, error) {
+func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, region string) (*docstore.Title, error) {
 	if kind != "movie" && kind != "series" {
 		return nil, ErrBadKind
 	}
@@ -115,9 +115,9 @@ func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, re
 	// retries next hit; store failures are real errors (the DB is ours).
 	if s.stale(title.ProvidersRefreshedAt, providersTTL) {
 		if provs, perr := s.TMDB.WatchProviders(ctx, kind, tmdbID, region); perr == nil {
-			rows := make([]store.ProviderRow, 0, len(provs))
+			rows := make([]docstore.ProviderRow, 0, len(provs))
 			for _, p := range provs {
-				rows = append(rows, store.ProviderRow{ID: p.ID, Name: p.Name, LogoPath: p.LogoPath})
+				rows = append(rows, docstore.ProviderRow{ID: p.ID, Name: p.Name, LogoPath: p.LogoPath})
 			}
 			if err := s.Store.ReplaceProviders(ctx, title.ID, region, rows); err != nil {
 				return nil, err
@@ -132,26 +132,26 @@ func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, re
 // fetchMetadata pulls TMDB details, returning the upsert payload, the
 // IMDB id (series only, "" when TMDB has none), and season rows (series
 // only).
-func (s *Service) fetchMetadata(ctx context.Context, kind string, tmdbID int64) (store.TitleUpsert, string, []store.SeasonRow, error) {
+func (s *Service) fetchMetadata(ctx context.Context, kind string, tmdbID int64) (docstore.TitleUpsert, string, []docstore.SeasonRow, error) {
 	if kind == "movie" {
 		m, err := s.TMDB.MovieDetails(ctx, tmdbID)
 		if err != nil {
-			return store.TitleUpsert{}, "", nil, err
+			return docstore.TitleUpsert{}, "", nil, err
 		}
-		return store.TitleUpsert{
+		return docstore.TitleUpsert{
 			TMDBID: m.TMDBID, Kind: "movie", Name: m.Name, Overview: m.Overview,
 			PosterPath: m.PosterPath, RuntimeMinutes: m.RuntimeMinutes,
 		}, "", nil, nil
 	}
 	tv, err := s.TMDB.TVDetails(ctx, tmdbID)
 	if err != nil {
-		return store.TitleUpsert{}, "", nil, err
+		return docstore.TitleUpsert{}, "", nil, err
 	}
-	seasons := make([]store.SeasonRow, 0, len(tv.Seasons))
+	seasons := make([]docstore.SeasonRow, 0, len(tv.Seasons))
 	for _, se := range tv.Seasons {
-		seasons = append(seasons, store.SeasonRow{Number: se.Number, EpisodeCount: se.EpisodeCount})
+		seasons = append(seasons, docstore.SeasonRow{Number: se.Number, EpisodeCount: se.EpisodeCount})
 	}
-	return store.TitleUpsert{
+	return docstore.TitleUpsert{
 		TMDBID: tv.TMDBID, Kind: "series", Name: tv.Name, Overview: tv.Overview,
 		PosterPath: tv.PosterPath, RuntimeMinutes: tv.RuntimeMinutes, Airing: tv.Airing,
 	}, tv.IMDBID, seasons, nil
@@ -162,7 +162,7 @@ func (s *Service) fetchMetadata(ctx context.Context, kind string, tmdbID int64) 
 // then refresh future air dates on the 1d TTL. Every failure path returns
 // the title unchanged — airings are enrichment, never worth failing the
 // request over; failed classes keep their stale stamp and retry next hit.
-func (s *Service) ensureAirings(ctx context.Context, title *store.Title, imdbID string) *store.Title {
+func (s *Service) ensureAirings(ctx context.Context, title *docstore.Title, imdbID string) *docstore.Title {
 	if title.Kind != "series" || !title.Airing {
 		return title
 	}
@@ -175,7 +175,7 @@ func (s *Service) ensureAirings(ctx context.Context, title *store.Title, imdbID 
 			return title // ErrNotFound is a normal outcome (no TVMaze entry)
 		}
 		id64 := int64(show.ID)
-		t2, uerr := s.Store.UpsertTitle(ctx, store.TitleUpsert{
+		t2, uerr := s.Store.UpsertTitle(ctx, docstore.TitleUpsert{
 			TMDBID: title.TMDBID, Kind: title.Kind, TVMazeID: &id64,
 			Name: title.Name, Overview: title.Overview, PosterPath: title.PosterPath,
 			RuntimeMinutes: title.RuntimeMinutes, Airing: title.Airing,
@@ -193,12 +193,12 @@ func (s *Service) ensureAirings(ctx context.Context, title *store.Title, imdbID 
 		return title
 	}
 	today := s.now().UTC().Format("2006-01-02")
-	rows := []store.AiringRow{}
+	rows := []docstore.AiringRow{}
 	for _, e := range eps {
 		if e.AirDate == "" || e.AirDate < today {
 			continue
 		}
-		rows = append(rows, store.AiringRow{Season: e.Season, Episode: e.Number, AirDate: e.AirDate})
+		rows = append(rows, docstore.AiringRow{Season: e.Season, Episode: e.Number, AirDate: e.AirDate})
 	}
 	if err := s.Store.ReplaceFutureAirings(ctx, title.ID, today, rows); err != nil {
 		return title

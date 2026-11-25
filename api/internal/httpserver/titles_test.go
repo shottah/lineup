@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/ingest"
-	"github.com/shottah/lineup/api/internal/store"
 	"github.com/shottah/lineup/api/internal/tmdb"
 )
 
@@ -25,26 +25,26 @@ func (f *fakeSearch) SearchMulti(_ context.Context, q string) ([]tmdb.SearchResu
 }
 
 type fakeIngester struct {
-	title              *store.Title
+	title              *docstore.Title
 	err                error
 	gotKind, gotRegion string
 	gotTMDBID          int64
 }
 
-func (f *fakeIngester) EnsureTitle(_ context.Context, kind string, tmdbID int64, region string) (*store.Title, error) {
+func (f *fakeIngester) EnsureTitle(_ context.Context, kind string, tmdbID int64, region string) (*docstore.Title, error) {
 	f.gotKind, f.gotTMDBID, f.gotRegion = kind, tmdbID, region
 	return f.title, f.err
 }
 
 type fakeTitleReader struct {
-	full      *store.TitleFull
+	full      *docstore.TitleFull
 	err       error
-	gotUserID int64
-	gotTitle  int64
+	gotUserID string
+	gotTitle  string
 	gotRegion string
 }
 
-func (f *fakeTitleReader) GetTitleFull(_ context.Context, userID, titleID int64, region string) (*store.TitleFull, error) {
+func (f *fakeTitleReader) GetTitleFull(_ context.Context, userID, titleID string, region string) (*docstore.TitleFull, error) {
 	f.gotUserID, f.gotTitle, f.gotRegion = userID, titleID, region
 	return f.full, f.err
 }
@@ -116,12 +116,12 @@ func TestSearchUpstreamDown(t *testing.T) {
 }
 
 func TestGetTitleHappyPath(t *testing.T) {
-	title := &store.Title{ID: 7, TMDBID: 1399, Kind: "series", Name: "GoT"}
+	title := &docstore.Title{ID: "series-1399", TMDBID: 1399, Kind: "series", Name: "GoT"}
 	fi := &fakeIngester{title: title}
-	fr := &fakeTitleReader{full: &store.TitleFull{
+	fr := &fakeTitleReader{full: &docstore.TitleFull{
 		Title:     *title,
-		Seasons:   []store.SeasonRow{{Number: 1, EpisodeCount: 10}},
-		Providers: []store.ProviderRow{{ID: 8, Name: "Netflix", LogoPath: "/n.jpg"}},
+		Seasons:   []docstore.SeasonRow{{Number: 1, EpisodeCount: 10}},
+		Providers: []docstore.ProviderRow{{ID: 8, Name: "Netflix", LogoPath: "/n.jpg"}},
 	}}
 	rec := get(t, titlesServer(t, &fakeSearch{}, fi, fr), "/v1/titles/series/1399")
 	if rec.Code != http.StatusOK {
@@ -130,17 +130,17 @@ func TestGetTitleHappyPath(t *testing.T) {
 	if fi.gotKind != "series" || fi.gotTMDBID != 1399 || fi.gotRegion != "US" {
 		t.Fatalf("ingester got %s/%d/%s, want series/1399/US", fi.gotKind, fi.gotTMDBID, fi.gotRegion)
 	}
-	if fr.gotTitle != 7 || fr.gotRegion != "US" || fr.gotUserID == 0 {
-		t.Fatalf("reader got user=%d title=%d region=%s", fr.gotUserID, fr.gotTitle, fr.gotRegion)
+	if fr.gotTitle != "series-1399" || fr.gotRegion != "US" || fr.gotUserID != "uid-1" {
+		t.Fatalf("reader got user=%s title=%s region=%s", fr.gotUserID, fr.gotTitle, fr.gotRegion)
 	}
 	var body struct {
 		Title struct {
 			TMDBID int64  `json:"tmdb_id"`
 			Name   string `json:"name"`
 		} `json:"title"`
-		Seasons   []store.SeasonRow   `json:"seasons"`
-		Providers []store.ProviderRow `json:"providers"`
-		Entry     *store.Entry        `json:"entry"`
+		Seasons   []docstore.SeasonRow   `json:"seasons"`
+		Providers []docstore.ProviderRow `json:"providers"`
+		Entry     *docstore.Entry        `json:"entry"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)

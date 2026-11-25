@@ -28,3 +28,7 @@ var reservedID = regexp.MustCompile(`^__.*__$`)
 func validID(id string) bool {
 	return id != "" && !strings.Contains(id, "/") && !reservedID.MatchString(id)
 }
+
+// ValidID reports whether id is usable as a Firestore document ID. Handlers
+// use it to reject path IDs before they reach the store.
+func ValidID(id string) bool { return validID(id) }

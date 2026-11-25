@@ -8,23 +8,22 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shottah/lineup/api/internal/docstore"
 	"github.com/shottah/lineup/api/internal/fbauth"
-	"github.com/shottah/lineup/api/internal/store"
 )
 
 // fakeUsers implements UserStore in memory.
 type fakeUsers struct {
-	byUID     map[string]*store.User
-	nextID    int64
+	byUID     map[string]*docstore.User
 	upsertErr error
 	updateErr error
 }
 
 func newFakeUsers() *fakeUsers {
-	return &fakeUsers{byUID: map[string]*store.User{}, nextID: 1}
+	return &fakeUsers{byUID: map[string]*docstore.User{}}
 }
 
-func (f *fakeUsers) UpsertUserByFirebaseUID(_ context.Context, uid, email, displayName string, defaultPrefs json.RawMessage) (*store.User, error) {
+func (f *fakeUsers) UpsertUserByFirebaseUID(_ context.Context, uid, email, displayName string, defaultPrefs json.RawMessage) (*docstore.User, error) {
 	if f.upsertErr != nil {
 		return nil, f.upsertErr
 	}
@@ -36,14 +35,13 @@ func (f *fakeUsers) UpsertUserByFirebaseUID(_ context.Context, uid, email, displ
 		cp := *u
 		return &cp, nil
 	}
-	u := &store.User{ID: f.nextID, FirebaseUID: uid, Email: email, DisplayName: displayName, Region: "US", SchedulePrefs: defaultPrefs}
-	f.nextID++
+	u := &docstore.User{ID: uid, Email: email, DisplayName: displayName, Region: "US", SchedulePrefs: defaultPrefs}
 	f.byUID[uid] = u
 	cp := *u
 	return &cp, nil
 }
 
-func (f *fakeUsers) UpdateUserPrefs(_ context.Context, userID int64, region *string, prefsJSON json.RawMessage) (*store.User, error) {
+func (f *fakeUsers) UpdateUserPrefs(_ context.Context, userID string, region *string, prefsJSON json.RawMessage) (*docstore.User, error) {
 	if f.updateErr != nil {
 		return nil, f.updateErr
 	}

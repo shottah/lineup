@@ -7,6 +7,7 @@ package fbauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	firebase "firebase.google.com/go/v4"
@@ -14,7 +15,7 @@ import (
 )
 
 // Identity is what a verified ID token yields. Email is always present for
-// the providers Lineup supports (users.email is NOT NULL); DisplayName may
+// the providers Lineup supports; DisplayName may
 // be empty.
 type Identity struct {
 	UID         string
@@ -33,13 +34,13 @@ type Verifier struct {
 	client *auth.Client
 }
 
-// New builds a Verifier for projectID. Verification needs no service
-// account credentials: signature checks use Google's public certs, and the
-// emulator (FIREBASE_AUTH_EMULATOR_HOST) skips signatures entirely.
-func New(ctx context.Context, projectID string) (*Verifier, error) {
-	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID})
-	if err != nil {
-		return nil, fmt.Errorf("fbauth: new app: %w", err)
+// New builds a Verifier from app, which main shares with the Firestore
+// client. Verification needs no service account credentials: signature
+// checks use Google's public certs, and the emulator
+// (FIREBASE_AUTH_EMULATOR_HOST) skips signatures entirely.
+func New(ctx context.Context, app *firebase.App) (*Verifier, error) {
+	if app == nil {
+		return nil, errors.New("fbauth: nil app")
 	}
 	client, err := app.Auth(ctx)
 	if err != nil {
