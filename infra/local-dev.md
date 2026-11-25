@@ -1,35 +1,34 @@
 # Local development stack
 
-Four processes, in start order. All local; no cloud access.
+Three processes, in start order. All local; no cloud access.
 
-## 1. Postgres 16 (Docker, port 5433 — 5432 is often taken)
+## 1. Firebase emulators: Auth (9099) and Firestore (8085)
 
-    docker run -d --name lineup-pg -p 127.0.0.1:5433:5432 \
-      -e POSTGRES_USER=lineup -e POSTGRES_PASSWORD=lineup -e POSTGRES_DB=lineup postgres:16
+Needs Java 21 (older JDKs are rejected by the Firestore emulator). On macOS
+with keg-only Homebrew Java, prefix emulator commands with
+`JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH`.
 
-Already created once? `docker start lineup-pg`.
+    firebase emulators:start --only auth,firestore --project demo-lineup
 
-## 2. Firebase Auth emulator (port 9099; needs Java ≥ 11)
-
-    firebase emulators:start --only auth --project demo-lineup
-
-`demo-` prefixed project IDs are guaranteed offline — the emulator cannot
+`demo-` prefixed project IDs are guaranteed offline: the emulators cannot
 touch real cloud resources with them. Do NOT use the real project ID here.
+Emulator data is in memory and gone when the emulators stop.
 
-## 3. API (port 8080; migrations run at boot)
+## 2. API (port 8080)
 
-    cd api && DATABASE_URL='postgres://lineup:lineup@localhost:5433/lineup?sslmode=disable' \
-      FIREBASE_PROJECT_ID=demo-lineup FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 \
+    cd api && FIRESTORE_EMULATOR_HOST=localhost:8085 \
+      FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 FIREBASE_PROJECT_ID=demo-lineup \
       PORT=8080 go run ./cmd/api
 
-`FIREBASE_AUTH_EMULATOR_HOST` makes firebase-admin-go verify tokens against
-the emulator. Omit it (and use the real project ID) to verify real tokens.
+`FIRESTORE_EMULATOR_HOST` and `FIREBASE_AUTH_EMULATOR_HOST` make the Firebase
+SDKs talk to the emulators. Omit both (and use the real project ID with ADC)
+to hit real Firestore and verify real tokens.
 
 Unlike the Next dev server, `go run` does NOT hot-reload: after pulling or
 switching branches with `api/` changes, kill and restart this process, or
 the web app will talk to a stale API (missing fields, absent routes).
 
-## 4. Web (port 3001 — 3000 is often taken)
+## 3. Web (port 3001 — 3000 is often taken)
 
     cd web && pnpm run dev --port 3001
 
@@ -44,13 +43,10 @@ Any non-empty `key=` works against the emulator. Use the token as
 
 ## Store integration tests
 
-    docker exec lineup-pg psql -U lineup -d lineup -c 'CREATE DATABASE lineup_test OWNER lineup;'  # once
-    cd api && TEST_DATABASE_URL='postgres://lineup:lineup@localhost:5433/lineup_test?sslmode=disable' go test ./internal/store/
+    cd api && firebase emulators:exec --project demo-lineup --only firestore \
+      --config ../firebase.json "go test ./..."
 
-Skipped automatically when `TEST_DATABASE_URL` is unset (CI stays hermetic).
-
-NEVER point `TEST_DATABASE_URL` at the dev database (`/lineup`): the tests
-write fixture titles, guides, and provider rows into whatever database they
-are given, and they once renamed the real Netflix provider row out from
-under the running app. `lineup_test` exists so test data and dev data never
-share a schema.
+Requires Java 21 (see above). The store tests skip automatically when
+`FIRESTORE_EMULATOR_HOST` is unset (CI stays hermetic); `emulators:exec` sets
+it. Each test uses its own `demo-<unique>` project ID, so tests never share
+data with each other or with a running dev emulator.

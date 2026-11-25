@@ -8,14 +8,16 @@ gcloud billing projects link "$PROJECT_ID" --billing-account="$BILLING"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com clouddeploy.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com compute.googleapis.com \
   firebase.googleapis.com identitytoolkit.googleapis.com \
-  firebaseapphosting.googleapis.com --project "$PROJECT_ID"
+  firebaseapphosting.googleapis.com firestore.googleapis.com --project "$PROJECT_ID"
+gcloud firestore databases describe --database="(default)" --project "$PROJECT_ID" >/dev/null 2>&1 || \
+  gcloud firestore databases create --database="(default)" --location=$REGION --type=firestore-native --project "$PROJECT_ID"
 gcloud artifacts repositories describe api --location=$REGION --project "$PROJECT_ID" >/dev/null 2>&1 || \
   gcloud artifacts repositories create api --repository-format=docker --location=$REGION --project "$PROJECT_ID"
 gcloud secrets describe tmdb-read-token --project "$PROJECT_ID" >/dev/null 2>&1 || \
   (printf 'REPLACE_ME' | gcloud secrets create tmdb-read-token --data-file=- --project "$PROJECT_ID")
 gcloud iam service-accounts describe api-runtime@"$PROJECT_ID".iam.gserviceaccount.com --project "$PROJECT_ID" >/dev/null 2>&1 || \
   gcloud iam service-accounts create api-runtime --project "$PROJECT_ID"
-for role in roles/secretmanager.secretAccessor; do
+for role in roles/secretmanager.secretAccessor roles/datastore.user; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:api-runtime@$PROJECT_ID.iam.gserviceaccount.com" --role="$role" -q >/dev/null
 done
