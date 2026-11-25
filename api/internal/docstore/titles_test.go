@@ -2,6 +2,7 @@ package docstore
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -158,14 +159,14 @@ func TestReplaceOnMissingTitleErrors(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	id := TitleID("movie", uniqueTMDBID())
-	if err := s.ReplaceSeasons(ctx, id, nil); err == nil {
-		t.Fatal("seasons: want error")
+	if err := s.ReplaceSeasons(ctx, id, nil); !errors.Is(err, ErrTitleNotFound) {
+		t.Fatal("seasons: want ErrTitleNotFound")
 	}
-	if err := s.ReplaceProviders(ctx, id, "US", nil); err == nil {
-		t.Fatal("providers: want error")
+	if err := s.ReplaceProviders(ctx, id, "US", nil); !errors.Is(err, ErrTitleNotFound) {
+		t.Fatal("providers: want ErrTitleNotFound")
 	}
-	if err := s.ReplaceFutureAirings(ctx, id, "2100-01-01", nil); err == nil {
-		t.Fatal("airings: want error")
+	if err := s.ReplaceFutureAirings(ctx, id, "2100-01-01", nil); !errors.Is(err, ErrTitleNotFound) {
+		t.Fatal("airings: want ErrTitleNotFound")
 	}
 	if m, _ := s.getTitles(ctx, []string{id}); len(m) != 0 {
 		t.Fatalf("title was created: %v", m)

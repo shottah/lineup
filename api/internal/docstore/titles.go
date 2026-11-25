@@ -207,16 +207,19 @@ func (s *Store) getTitles(ctx context.Context, ids []string) (map[string]*titleD
 }
 
 // updateTitle runs fn on an existing title doc inside a transaction; fn
-// returns the field updates (and may queue extra writes). A missing title is
-// an error; it is never created.
+// returns the field updates (and may queue extra writes). A missing or
+// invalid title is ErrTitleNotFound (wrapped); it is never created.
 func (s *Store) updateTitle(ctx context.Context, op, titleID string,
 	fn func(tx *firestore.Transaction, d *titleDoc) ([]firestore.Update, error)) error {
 	if !validID(titleID) {
-		return fmt.Errorf("docstore: %s: invalid title id %q", op, titleID)
+		return fmt.Errorf("docstore: %s: %w", op, ErrTitleNotFound)
 	}
 	ref := s.c.Collection("titles").Doc(titleID)
 	err := s.c.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		snap, err := tx.Get(ref)
+		if isNotFound(err) {
+			return ErrTitleNotFound
+		}
 		if err != nil {
 			return err
 		}
