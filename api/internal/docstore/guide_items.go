@@ -55,7 +55,7 @@ type SwapInfo struct {
 // (isPlan=false) on the item's resulting date offering the swapped-in title.
 // ErrGuideNotFound when the guide or item is missing.
 func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID string, upd GuideItemUpdate) (*GuideItem, error) {
-	if !validID(userID) || !validID(guideID) {
+	if !validID(userID) || !validID(guideID) || !validID(itemID) {
 		return nil, ErrGuideNotFound
 	}
 	ref := s.guides(userID).Doc(guideID)
@@ -136,7 +136,7 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID str
 // DeleteGuideItem removes one item from the guide. ErrGuideNotFound when the
 // guide or item is missing.
 func (s *Store) DeleteGuideItem(ctx context.Context, userID, guideID, itemID string) error {
-	if !validID(userID) || !validID(guideID) {
+	if !validID(userID) || !validID(guideID) || !validID(itemID) {
 		return ErrGuideNotFound
 	}
 	ref := s.guides(userID).Doc(guideID)
