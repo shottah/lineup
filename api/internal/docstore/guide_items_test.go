@@ -164,7 +164,7 @@ func TestUpdateGuideItemSwapProvider(t *testing.T) {
 	// A second series sharing the movie's provider (902) plus a lower id
 	// (500), to distinguish "keep the current provider" from "lowest id".
 	altSeries := seedTitle(t, s, "Alt Series")
-	if err := s.ReplaceProviders(ctx, altSeries, "US", []ProviderRow{{ID: 902, Name: "P902"}, {ID: 500, Name: "P500"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, altSeries, "US", "stream", []ProviderRow{{ID: 902, Name: "P902"}, {ID: 500, Name: "P500"}}); err != nil {
 		t.Fatalf("seed alt providers: %v", err)
 	}
 	if _, err := s.UpsertEntry(ctx, uid, altSeries, EntryUpdate{Status: strp("rotation")}); err != nil {

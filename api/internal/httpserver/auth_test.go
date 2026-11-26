@@ -41,17 +41,20 @@ func (f *fakeUsers) UpsertUserByFirebaseUID(_ context.Context, uid, email, displ
 	return &cp, nil
 }
 
-func (f *fakeUsers) UpdateUserPrefs(_ context.Context, userID string, region *string, prefsJSON json.RawMessage) (*docstore.User, error) {
+func (f *fakeUsers) UpdateUserPrefs(_ context.Context, userID string, upd docstore.UserPrefsUpdate) (*docstore.User, error) {
 	if f.updateErr != nil {
 		return nil, f.updateErr
 	}
 	for _, u := range f.byUID {
 		if u.ID == userID {
-			if region != nil {
-				u.Region = *region
+			if upd.Region != nil {
+				u.Region = *upd.Region
 			}
-			if prefsJSON != nil {
-				u.SchedulePrefs = prefsJSON
+			if upd.SchedulePrefs != nil {
+				u.SchedulePrefs = upd.SchedulePrefs
+			}
+			if upd.Timezone != nil {
+				u.Timezone = *upd.Timezone
 			}
 			cp := *u
 			return &cp, nil

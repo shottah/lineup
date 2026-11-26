@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -58,7 +60,40 @@ func (d Deps) buildInput(ctx context.Context, u *docstore.User, start time.Time,
 	if err != nil {
 		return guide.Input{}, err
 	}
+	if d.refreshRotation(ctx, titles, u.Region) {
+		if titles, err = d.Guides.GuideInputTitles(ctx, u.ID, u.Region); err != nil {
+			return guide.Input{}, err
+		}
+	}
 	return guide.Input{Seed: seed, Days: guideDays(start, days, windows), Titles: titles, Keep: keep}, nil
+}
+
+// refreshRotation runs every rotation title through ingest's TTL refresh
+// before scheduling, so the guide never schedules from provider data the
+// title page would already have refreshed (e.g. docs ingested before the
+// rent/buy fallback). Fresh titles cost one doc read each. Failures are
+// ignored: ingest serves cached rows on upstream errors, and a store error
+// here just means generating from what is already stored. Reports whether
+// anything ran, i.e. whether titles must be re-hydrated.
+func (d Deps) refreshRotation(ctx context.Context, titles []guide.Title, region string) bool {
+	if d.Ingest == nil || len(titles) == 0 {
+		return false
+	}
+	var wg sync.WaitGroup
+	for _, t := range titles {
+		kind, rawID, ok := strings.Cut(t.ID, "-")
+		tmdbID, err := strconv.ParseInt(rawID, 10, 64)
+		if !ok || err != nil {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = d.Ingest.EnsureTitle(ctx, kind, tmdbID, region)
+		}()
+	}
+	wg.Wait()
+	return true
 }
 
 // guideResponse decorates a guide with rendering dictionaries so the web
@@ -67,6 +102,39 @@ type guideResponse struct {
 	*docstore.Guide
 	Titles    map[string]docstore.TitleLookup `json:"titles"`
 	Providers map[int64]docstore.ProviderRow  `json:"providers"`
+	// Windows lists the enabled viewing window of each guide day, from the
+	// user's current schedule prefs (disabled days are absent). The web
+	// sizes the calendar's time axis from these rather than from items.
+	Windows []dayWindow `json:"windows"`
+}
+
+type dayWindow struct {
+	Date     string `json:"date"`
+	StartMin int    `json:"start_min"`
+	EndMin   int    `json:"end_min"`
+}
+
+// guideWindows maps a guide's date range onto the user's enabled windows.
+// Unparseable dates or prefs yield an empty list rather than failing the
+// response: the windows only size the calendar.
+func guideWindows(u *docstore.User, g *docstore.Guide) []dayWindow {
+	out := []dayWindow{}
+	if u == nil {
+		return out
+	}
+	start, err1 := time.Parse(dateFmt, g.StartDate)
+	end, err2 := time.Parse(dateFmt, g.EndDate)
+	windows, err3 := prefs.Windows(u.SchedulePrefs)
+	if err1 != nil || err2 != nil || err3 != nil || end.Before(start) {
+		return out
+	}
+	n := int(end.Sub(start).Hours()/24) + 1
+	for _, day := range guideDays(start, n, windows) {
+		if day.Window != (guide.Window{}) {
+			out = append(out, dayWindow{Date: day.Date, StartMin: day.Window.StartMin, EndMin: day.Window.EndMin})
+		}
+	}
+	return out
 }
 
 // writeGuide responds with the guide plus its sidecars at the given status code.
@@ -80,7 +148,8 @@ func writeGuide(w http.ResponseWriter, r *http.Request, d Deps, status int, g *d
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(guideResponse{Guide: g, Titles: titles, Providers: provs})
+	json.NewEncoder(w).Encode(guideResponse{Guide: g, Titles: titles, Providers: provs,
+		Windows: guideWindows(userFrom(r.Context()), g)})
 }
 
 func handleCreateGuide(d Deps) http.HandlerFunc {
@@ -123,7 +192,7 @@ func handleCreateGuide(d Deps) http.HandlerFunc {
 func handleCurrentGuide(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u := userFrom(r.Context())
-		g, err := d.Guides.CurrentGuide(r.Context(), u.ID, d.Now().UTC().Format(dateFmt))
+		g, err := d.Guides.CurrentGuide(r.Context(), u.ID, userToday(u, d.Now()))
 		switch {
 		case errors.Is(err, docstore.ErrGuideNotFound):
 			writeJSONError(w, http.StatusNotFound, "not_found")
@@ -154,7 +223,9 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 			return
 		}
 
-		today := d.Now().UTC().Format(dateFmt)
+		// "Today" is the user's local date: in a US evening UTC is already
+		// tomorrow, and using it would freeze tonight as the past.
+		today := userToday(u, d.Now())
 		var keepIDs []string
 		var keep []guide.Item
 		for _, it := range g.Items {
@@ -162,7 +233,7 @@ func handleRegenerate(d Deps) http.HandlerFunc {
 				keepIDs = append(keepIDs, it.ID)
 				keep = append(keep, guide.Item{Date: it.Date, StartMin: it.StartMin, EndMin: it.EndMin,
 					TitleID: it.TitleID, Season: it.Season, Episode: it.Episode, Provider: it.ProviderID,
-					IsPlan: it.IsPlan, Pinned: it.Pinned, Edited: it.Edited, Watched: it.Watched})
+					Offer: it.Offer, IsPlan: it.IsPlan, Pinned: it.Pinned, Edited: it.Edited, Watched: it.Watched})
 			}
 		}
 
@@ -257,7 +328,7 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 		u := userFrom(r.Context())
 		upd := docstore.GuideItemUpdate{Date: body.Date, StartMin: body.StartMin, Pinned: body.Pinned,
 			SetEdited: body.Date != nil || body.StartMin != nil || body.TitleID != nil,
-			Today:     d.Now().UTC().Format(dateFmt)}
+			Today:     userToday(u, d.Now())}
 
 		if body.TitleID != nil {
 			info, err := d.Guides.SwapTitle(r.Context(), u.ID, *body.TitleID, u.Region)
@@ -281,6 +352,7 @@ func handlePatchItem(d Deps) http.HandlerFunc {
 			// current provider when the new title streams there too,
 			// else the store falls back to the lowest id.
 			upd.SwapProviders = info.Providers
+			upd.SwapOffer = info.Offer
 		}
 
 		it, err := d.Guides.UpdateGuideItem(r.Context(), u.ID, gid, itemID, upd)

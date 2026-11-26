@@ -60,7 +60,7 @@ func TestUpsertUserByFirebaseUID(t *testing.T) {
 
 	// Refresh keeps region and prefs that were changed in between.
 	region := "GB"
-	if _, err := s.UpdateUserPrefs(ctx, uid, &region, json.RawMessage(`{"windows":{"mon":{}}}`)); err != nil {
+	if _, err := s.UpdateUserPrefs(ctx, uid, UserPrefsUpdate{Region: &region, SchedulePrefs: json.RawMessage(`{"windows":{"mon":{}}}`)}); err != nil {
 		t.Fatalf("update prefs: %v", err)
 	}
 	u4, err := s.UpsertUserByFirebaseUID(ctx, uid, "c@example.com", "Ada3", defaults)
@@ -100,7 +100,7 @@ func TestUpdateUserPrefs(t *testing.T) {
 
 	region := "GB"
 	newPrefs := json.RawMessage(`{"windows":{"mon":{"enabled":false,"start":"09:00","end":"10:00"}}}`)
-	u2, err := s.UpdateUserPrefs(ctx, u.ID, &region, newPrefs)
+	u2, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{Region: &region, SchedulePrefs: newPrefs})
 	if err != nil {
 		t.Fatalf("update both: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestUpdateUserPrefs(t *testing.T) {
 	}
 
 	// nil region and nil prefs leave fields untouched.
-	u3, err := s.UpdateUserPrefs(ctx, u.ID, nil, nil)
+	u3, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{})
 	if err != nil {
 		t.Fatalf("no-op update: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestUpdateUserPrefs(t *testing.T) {
 
 	// region-only update leaves prefs untouched.
 	region2 := "US"
-	u4, err := s.UpdateUserPrefs(ctx, u.ID, &region2, nil)
+	u4, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{Region: &region2})
 	if err != nil {
 		t.Fatalf("region-only update: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestUpdateUserPrefs(t *testing.T) {
 
 	// prefs-only update leaves region untouched.
 	prefs2 := json.RawMessage(`{"windows":{"tue":{"enabled":true,"start":"20:00","end":"21:00"}}}`)
-	u5, err := s.UpdateUserPrefs(ctx, u.ID, nil, prefs2)
+	u5, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{SchedulePrefs: prefs2})
 	if err != nil {
 		t.Fatalf("prefs-only update: %v", err)
 	}
@@ -138,11 +138,42 @@ func TestUpdateUserPrefs(t *testing.T) {
 	}
 }
 
+func TestUpdateUserTimezone(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	u, err := s.UpsertUserByFirebaseUID(ctx, uniqueUID(t), "tz@example.com", "Tz", json.RawMessage(`{"windows":{}}`))
+	if err != nil {
+		t.Fatalf("seed upsert: %v", err)
+	}
+	if u.Timezone != "" {
+		t.Fatalf("new user timezone = %q, want empty (UTC)", u.Timezone)
+	}
+	tz := "America/Chicago"
+	u2, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{Timezone: &tz})
+	if err != nil || u2.Timezone != tz {
+		t.Fatalf("set timezone = %+v, %v", u2, err)
+	}
+	// Other updates leave it alone, and sign-in reads it back.
+	region := "CA"
+	if _, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{Region: &region}); err != nil {
+		t.Fatal(err)
+	}
+	u3, err := s.UpsertUserByFirebaseUID(ctx, u.ID, "tz@example.com", "Tz", nil)
+	if err != nil || u3.Timezone != tz || u3.Region != "CA" {
+		t.Fatalf("after region update = %+v, %v; want timezone kept", u3, err)
+	}
+	empty := ""
+	u4, err := s.UpdateUserPrefs(ctx, u.ID, UserPrefsUpdate{Timezone: &empty})
+	if err != nil || u4.Timezone != "" {
+		t.Fatalf("clear timezone = %+v, %v", u4, err)
+	}
+}
+
 func TestUpdateUserPrefsMissingUser(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	region := "GB"
-	if _, err := s.UpdateUserPrefs(ctx, "no-such-user", &region, nil); err == nil {
+	if _, err := s.UpdateUserPrefs(ctx, "no-such-user", UserPrefsUpdate{Region: &region}); err == nil {
 		t.Fatal("want error for missing user")
 	}
 	// Must not have created the doc.

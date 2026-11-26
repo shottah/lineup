@@ -103,3 +103,39 @@ func TestPatchMe(t *testing.T) {
 		t.Fatalf("PATCH results not persisted: %s", rec.Body.String())
 	}
 }
+
+func TestPatchMeTimezone(t *testing.T) {
+	h, _ := testServer(t)
+
+	// A new user has no timezone yet: "" means UTC.
+	rec := do(t, h, http.MethodGet, "/v1/me", "tok-1", "")
+	if !strings.Contains(rec.Body.String(), `"timezone":""`) {
+		t.Fatalf("GET /v1/me missing empty timezone: %s", rec.Body.String())
+	}
+
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"iana zone", `{"timezone":"America/Chicago"}`, http.StatusOK},
+		{"utc", `{"timezone":"UTC"}`, http.StatusOK},
+		{"unknown zone", `{"timezone":"Mars/Olympus_Mons"}`, http.StatusUnprocessableEntity},
+		{"server local is not a zone", `{"timezone":"Local"}`, http.StatusUnprocessableEntity},
+		{"path traversal", `{"timezone":"../../etc/passwd"}`, http.StatusUnprocessableEntity},
+		{"empty clears to utc", `{"timezone":""}`, http.StatusOK},
+		{"set again", `{"timezone":"Europe/London"}`, http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := do(t, h, http.MethodPatch, "/v1/me", "tok-1", tc.body)
+			if rec.Code != tc.want {
+				t.Fatalf("PATCH /v1/me %s = %d, want %d (body %s)", tc.body, rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+	rec = do(t, h, http.MethodGet, "/v1/me", "tok-1", "")
+	if !strings.Contains(rec.Body.String(), `"timezone":"Europe/London"`) {
+		t.Fatalf("timezone not persisted: %s", rec.Body.String())
+	}
+}

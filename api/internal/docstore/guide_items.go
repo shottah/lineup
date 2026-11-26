@@ -22,7 +22,7 @@ type GuideItemUpdate struct {
 	Episode     *int
 	Pinned      *bool
 	SetEdited   bool
-	// Today (YYYY-MM-DD, UTC) gates move enforcement; empty disables it.
+	// Today (YYYY-MM-DD, the user's local date) gates move enforcement; empty disables it.
 	// Only consulted when the update is a move (Date or StartMin set).
 	Today string
 	// SwapProviders is the new title's region-filtered provider ids
@@ -30,6 +30,10 @@ type GuideItemUpdate struct {
 	// the item's current provider when it's among these, otherwise falls
 	// back to the lowest id; nil/empty leaves providerId unchanged.
 	SwapProviders []int64
+	// SwapOffer is the new title's offer type (SwapInfo.Offer). It is
+	// applied together with SwapProviders, so the item's offer always
+	// describes its provider.
+	SwapOffer string
 }
 
 // SwapInfo describes a swap-eligible title (rotation or watchlist).
@@ -43,6 +47,8 @@ type SwapInfo struct {
 	// ascending; empty (not nil) when the title has none in this region, in
 	// which case callers leave the provider alone.
 	Providers []int64
+	// Offer is the offer type of Providers ("stream" | "rent" | "buy").
+	Offer string
 }
 
 // UpdateGuideItem applies move/swap/pin semantics to one item in a single
@@ -104,8 +110,13 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID str
 			it.Pinned = *upd.Pinned
 		}
 		it.Edited = it.Edited || upd.SetEdited
-		if len(upd.SwapProviders) > 0 && !slices.Contains(upd.SwapProviders, it.ProviderID) {
-			it.ProviderID = slices.Min(upd.SwapProviders)
+		if len(upd.SwapProviders) > 0 {
+			if !slices.Contains(upd.SwapProviders, it.ProviderID) {
+				it.ProviderID = slices.Min(upd.SwapProviders)
+			}
+			if upd.SwapOffer != "" {
+				it.Offer = upd.SwapOffer
+			}
 		}
 		d.Items[idx] = it
 
@@ -120,7 +131,7 @@ func (s *Store) UpdateGuideItem(ctx context.Context, userID, guideID, itemID str
 		if err := tx.Update(ref, []firestore.Update{{Path: "items", Value: d.Items}}); err != nil {
 			return err
 		}
-		gi := GuideItem(it)
+		gi := it.item()
 		out = &gi
 		return nil
 	})
@@ -214,6 +225,7 @@ func (s *Store) SwapTitle(ctx context.Context, userID, titleID, region string) (
 		Runtime:       defaultRuntime(td.Kind, td.RuntimeMinutes),
 		PointerSeason: e.PointerSeason, PointerEpisode: e.PointerEpisode,
 		Providers: append([]int64{}, td.Providers[region]...),
+		Offer:     td.offer(region),
 	}
 	sort.Slice(info.Providers, func(i, j int) bool { return info.Providers[i] < info.Providers[j] })
 	return info, nil

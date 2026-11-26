@@ -56,10 +56,13 @@ type GuideItem struct {
 	Season     int    `json:"season"`
 	Episode    int    `json:"episode"`
 	ProviderID int64  `json:"provider_id"`
-	IsPlan     bool   `json:"is_plan"`
-	Pinned     bool   `json:"pinned"`
-	Edited     bool   `json:"edited"`
-	Watched    bool   `json:"watched"`
+	// Offer is "stream" | "rent" | "buy": how the title is available on
+	// ProviderID.
+	Offer   string `json:"offer"`
+	IsPlan  bool   `json:"is_plan"`
+	Pinned  bool   `json:"pinned"`
+	Edited  bool   `json:"edited"`
+	Watched bool   `json:"watched"`
 }
 
 // TitleLookup is the guide sidecar's per-title rendering data (#18).
@@ -88,6 +91,7 @@ type guideItemDoc struct {
 	Season     int    `firestore:"season"`
 	Episode    int    `firestore:"episode"`
 	ProviderID int64  `firestore:"providerId"`
+	Offer      string `firestore:"offer"`
 	IsPlan     bool   `firestore:"isPlan"`
 	Pinned     bool   `firestore:"pinned"`
 	Edited     bool   `firestore:"edited"`
@@ -98,10 +102,21 @@ func (d *guideDoc) guide(id string) *Guide {
 	g := &Guide{ID: id, StartDate: d.StartDate, EndDate: d.EndDate, Seed: d.Seed,
 		Items: make([]GuideItem, len(d.Items))}
 	for i, it := range d.Items {
-		g.Items[i] = GuideItem(it)
+		g.Items[i] = it.item()
 	}
 	sortItems(g.Items)
 	return g
+}
+
+// item converts the stored shape to the API shape. Items stored before
+// offers were recorded came from flatrate-only data, so an empty offer
+// reads as "stream".
+func (it guideItemDoc) item() GuideItem {
+	gi := GuideItem(it)
+	if gi.Offer == "" {
+		gi.Offer = guide.OfferStream
+	}
+	return gi
 }
 
 // genItemID mints guide item IDs; tests swap it to force collisions.
@@ -122,7 +137,7 @@ func appendNewItems(d *guideDoc, items []guide.Item) {
 		used[id] = true
 		d.Items = append(d.Items, guideItemDoc{
 			ID: id, Date: it.Date, StartMin: it.StartMin, EndMin: it.EndMin, TitleID: it.TitleID,
-			Season: it.Season, Episode: it.Episode, ProviderID: it.Provider,
+			Season: it.Season, Episode: it.Episode, ProviderID: it.Provider, Offer: it.Offer,
 			IsPlan: it.IsPlan, Pinned: it.Pinned, Edited: it.Edited, Watched: it.Watched,
 		})
 	}
@@ -192,6 +207,7 @@ func (s *Store) GuideInputTitles(ctx context.Context, userID, region string) ([]
 		if p := td.Providers[region]; len(p) > 0 {
 			t.Providers = append([]int64(nil), p...)
 			sort.Slice(t.Providers, func(i, j int) bool { return t.Providers[i] < t.Providers[j] })
+			t.Offer = td.offer(region)
 		}
 		for k, n := range td.Seasons {
 			if num, err := strconv.Atoi(k); err == nil {

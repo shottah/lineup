@@ -73,7 +73,7 @@ func newFakeGuides() *fakeGuides {
 
 // fixtureTitles is a single small rotation title (a non-airing series with
 // one provider and a 20-episode season), enough for the real engine to
-// place one episode per enabled day.
+// fill each enabled day with back-to-back episodes.
 func fixtureTitles() []guide.Title {
 	return []guide.Title{{
 		ID: "series-1", Kind: "series", Name: "Show", Runtime: 30,
@@ -362,11 +362,12 @@ func TestCreateGuideHappyPath(t *testing.T) {
 	if fg.createArgs.startDate != "2026-01-05" || fg.createArgs.endDate != wantEnd {
 		t.Fatalf("dates = %s..%s, want 2026-01-05..%s", fg.createArgs.startDate, fg.createArgs.endDate, wantEnd)
 	}
-	// The fixture has one series title that places one episode per enabled
-	// day; with only tue/thu falling inside the requested range, exactly 2
-	// items must be generated, each landing on a Tue/Thu/Sat date.
-	if len(fg.createArgs.items) != 2 {
-		t.Fatalf("generated items = %d, want 2 (one per enabled weekday in range): %+v", len(fg.createArgs.items), fg.createArgs.items)
+	// The fixture has one 30-min series that fills each enabled day back to
+	// back (8 episodes in 19:00-23:00); with only tue/thu falling inside the
+	// requested range, exactly 16 items must be generated, each landing on
+	// a Tue/Thu/Sat date.
+	if len(fg.createArgs.items) != 16 {
+		t.Fatalf("generated items = %d, want 16 (8 back-to-back 30-min episodes per enabled weekday in range): %+v", len(fg.createArgs.items), fg.createArgs.items)
 	}
 	wantWeekdays := map[time.Weekday]bool{time.Tuesday: true, time.Thursday: true, time.Saturday: true}
 	for _, it := range fg.createArgs.items {
@@ -383,7 +384,7 @@ func TestCreateGuideHappyPath(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("body not JSON: %v", err)
 	}
-	if got.StartDate != "2026-01-05" || got.EndDate != wantEnd || got.Seed != fixedClock.UnixNano() || len(got.Items) != 2 {
+	if got.StartDate != "2026-01-05" || got.EndDate != wantEnd || got.Seed != fixedClock.UnixNano() || len(got.Items) != 16 {
 		t.Fatalf("echoed guide = %+v", got)
 	}
 }
