@@ -26,6 +26,7 @@ import { DayColumn } from "./DayColumn";
 import { GridDragPreview } from "./GridDragPreview";
 import { TimeGutter } from "./TimeGutter";
 import { useGuideItemDrag } from "./useGuideItemDrag";
+import { localDate } from "@/lib/today";
 
 // Time-grid vertical scale (design spec §1): "fill the viewport, floor at
 // 66vh, then scroll" lives entirely in these constants plus the
@@ -63,8 +64,6 @@ export function CalendarView({ guide, today }: { guide: GuideResponse; today: st
   // hydration.
   const [now, setNow] = useState<{ min: number; today: string; yesterday: string } | null>(null);
   useEffect(() => {
-    const localDate = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const tick = () => {
       const d = new Date();
       const y = new Date(d);

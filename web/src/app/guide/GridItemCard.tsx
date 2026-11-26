@@ -7,6 +7,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { epLabel, type TimeGridItem } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
+import { OfferBadge } from "./OfferBadge";
 import { ProviderChip } from "./ProviderChip";
 import { SlotQuickActions } from "./SlotQuickActions";
 import { usePosterHue } from "./usePosterHue";
@@ -100,6 +101,7 @@ export function GridItemCard({ guide, gridItem, columnDow, minItemPx, isPast }: 
               />
             </>
           )}
+          <OfferBadge item={item} />
         </div>
         {item.pinned && (
           <span className="mt-1.5 inline-block rounded-full bg-acc-soft px-2 py-0.5 text-[9.5px] font-medium text-acc">

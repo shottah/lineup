@@ -6,21 +6,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/Providers";
 import { api, ApiError } from "@/lib/api";
 import type { GuideResponse } from "@/lib/types";
+// Local (not UTC) date: what a native <input type="date"> shows and what
+// "today" means to the person planning their week.
+import { todayLocal } from "@/lib/today";
 
 const MIN_DAYS = 1;
 const MAX_DAYS = 14;
 const DEFAULT_DAYS = 7;
-
-// Local (not UTC) calendar date, YYYY-MM-DD — matches what a native
-// <input type="date"> shows and what "today" means to the person
-// planning their week, not what UTC says it is.
-function todayLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 // No-guide-yet state (404 on GET /v1/guides/current): a centered panel
 // form to generate the first week. GuideBody renders this in place of

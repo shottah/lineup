@@ -54,6 +54,14 @@ export function epLabel(title: GuideTitleLookup, item: GuideItem): string {
   return title.kind === "series" ? `S${item.season}E${item.episode}` : "Movie";
 }
 
+// "Rent" / "Buy" for items that cost extra on their provider; null for
+// subscription streaming (and pre-offer payloads), which stays unlabelled.
+export function offerLabel(item: GuideItem): "Rent" | "Buy" | null {
+  if (item.offer === "rent") return "Rent";
+  if (item.offer === "buy") return "Buy";
+  return null;
+}
+
 export type CalendarSlot = {
   item: GuideItem;
   title: GuideTitleLookup;
@@ -293,12 +301,22 @@ export type TimeGrid = {
 };
 
 // Time-grid view model (spec §1): a single shared time window across the week
-// (union of PLAN item spans, floored/ceiled to the hour) plus per-day laid-out
-// items carrying positioning factors and overlap columns.
+// plus per-day laid-out items carrying positioning factors and overlap
+// columns. The window is the union of the guide days' viewing windows
+// (g.windows), widened to cover any PLAN item outside them (e.g. one dragged
+// late), floored/ceiled to the hour. Sizing from the windows rather than the
+// items keeps a lone 24-minute episode from stretching over the whole
+// viewport, and lets empty days still show the evening's axis. Without
+// windows (older payloads) it falls back to the plan items alone.
 export function toTimeGrid(g: GuideResponse, today: string): TimeGrid {
   const planByDate = new Map<string, GuideItem[]>();
   let minStart = Infinity;
   let maxEnd = -Infinity;
+  for (const w of g.windows ?? []) {
+    if (w.date < g.start_date || w.date > g.end_date) continue;
+    minStart = Math.min(minStart, w.start_min);
+    maxEnd = Math.max(maxEnd, w.end_min);
+  }
   for (const item of g.items) {
     if (!item.is_plan) continue;
     minStart = Math.min(minStart, item.start_min);

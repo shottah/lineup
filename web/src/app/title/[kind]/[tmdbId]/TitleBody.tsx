@@ -57,6 +57,8 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
   }
 
   const { title, seasons, providers, entry } = data;
+  // Rent/Buy when the region has no subscription providers (API fallback).
+  const offerText = data.offer === "rent" ? "Rent" : data.offer === "buy" ? "Buy" : "Stream";
   const poster = posterUrl(title.poster_path, "w342");
 
   return (
@@ -115,7 +117,7 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
                 WHERE TO WATCH
               </h2>
               {providers.length === 0 ? (
-                <p className="text-[13px] text-faint">Not streaming in your region</p>
+                <p className="text-[13px] text-faint">Not available in your region</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {providers.map((p) => {
@@ -137,7 +139,7 @@ export function TitleBody({ kind, tmdbId }: { kind: string; tmdbId: string }) {
                           </span>
                         )}
                         <span className="text-[12.5px] font-medium text-ink">{p.name}</span>
-                        <span className="text-[11px] text-faint">Stream</span>
+                        <span className="text-[11px] text-faint">{offerText}</span>
                       </span>
                     );
                   })}
