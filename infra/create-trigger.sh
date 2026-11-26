@@ -12,7 +12,7 @@ PROJECT_ID="${PROJECT_ID:-lineup-app-ae6b}"
 REGION="${REGION:-us-central1}"
 CONNECTION_NAME="${CONNECTION_NAME:-lineup-github}"
 REPO_ID="${REPO_ID:-lineup}"
-REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/shottah/lineup.git}"
+REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/strata-lab/lineup.git}"
 TRIGGER_NAME="${TRIGGER_NAME:-api-deploy}"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
@@ -57,7 +57,7 @@ echo "deploy execution SA: $EXEC_SA"
 for role in roles/cloudbuild.builds.builder roles/artifactregistry.writer \
             roles/clouddeploy.releaser; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:${BUILD_SA}" --role="$role" -q >/dev/null
+    --member="serviceAccount:${BUILD_SA}" --role="$role" --condition=None -q >/dev/null
 done
 
 # EXEC_SA runs the Cloud Deploy render/deploy jobs:
@@ -71,7 +71,7 @@ done
 #                             only run.admin carries it.
 for role in roles/clouddeploy.jobRunner roles/run.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:${EXEC_SA}" --role="$role" -q >/dev/null
+    --member="serviceAccount:${EXEC_SA}" --role="$role" --condition=None -q >/dev/null
 done
 
 # actAs chain:
@@ -93,7 +93,7 @@ echo "== 3. GitHub connection (2nd-gen) =="
 # after the connection reaches installationState COMPLETE -- see the manual-steps
 # checklist in infra/README.md.
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CLOUDBUILD_P4SA}" --role=roles/secretmanager.admin -q >/dev/null
+  --member="serviceAccount:${CLOUDBUILD_P4SA}" --role=roles/secretmanager.admin --condition=None -q >/dev/null
 
 if ! gcloud builds connections describe "$CONNECTION_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
@@ -109,7 +109,7 @@ if [[ "$CONN_STAGE" != "COMPLETE" ]]; then
     --project="$PROJECT_ID" --format='value(installationState.actionUri)')"
   echo ""
   echo "Connection '$CONNECTION_NAME' is not yet usable (state: $CONN_STAGE)."
-  echo "A human with admin access to github.com/shottah/lineup must complete the"
+  echo "A human with admin access to github.com/strata-lab/lineup must complete the"
   echo "one-time OAuth + GitHub App install in a browser, then re-run this script."
   echo ""
   if [[ -n "$ACTION_URI" ]]; then
@@ -133,6 +133,12 @@ if ! gcloud builds repositories describe "$REPO_ID" --connection="$CONNECTION_NA
 fi
 
 echo "== 5. Build trigger =="
+# Fires on API code and on the build/runtime config the pipeline reads, so a
+# change to run-service.yaml (env, scaling) deploys too. clouddeploy.yaml is
+# excluded: pipeline changes take effect via `gcloud deploy apply`, not a build.
+# --service-account is required: without it the API answers a bare
+# INVALID_ARGUMENT. A user-set SA also needs a logging option, which
+# cloudbuild.yaml sets (CLOUD_LOGGING_ONLY).
 if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud builds triggers create github \
@@ -140,8 +146,9 @@ if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --region="$REGION" \
     --repository="projects/${PROJECT_ID}/locations/${REGION}/connections/${CONNECTION_NAME}/repositories/${REPO_ID}" \
     --branch-pattern='^main$' \
-    --included-files='api/**' \
+    --included-files='api/**,infra/cloudbuild.yaml,infra/run-service.yaml,infra/skaffold.yaml' \
     --build-config=infra/cloudbuild.yaml \
+    --service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
     --project="$PROJECT_ID" -q
 fi
 

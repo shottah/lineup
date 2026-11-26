@@ -91,14 +91,14 @@ Apple: NOT now — see §7.
 firebase apphosting:backends:create --project lineup-app-ae6b --location us-central1
 ```
 
-Interactive prompts: connect GitHub repo `shottah/lineup`, root directory
+Interactive prompts: connect GitHub repo `strata-lab/lineup`, root directory
 `web`, live branch `main`, backend name `lineup-web`. The GitHub app grant
 is browser-only: if the CLI pauses with a URL, complete the grant as a
-github.com/shottah admin, then re-run the command (same
+github.com/strata-lab admin, then re-run the command (same
 run-pause-grant-rerun pattern as `infra/create-trigger.sh`).
 
 Verify: `firebase apphosting:backends:list --project lineup-app-ae6b` shows
-the backend with repo `shottah/lineup` and branch `main`.
+the backend with repo `strata-lab/lineup` and branch `main`.
 
 Then add the backend's `*.hosted.app` domain to the API's CORS allowlist
 (`AllowedOrigins` in `api/internal/httpserver/server.go`) and deploy —

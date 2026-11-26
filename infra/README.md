@@ -95,7 +95,7 @@ auth is Firebase ID tokens, added in a later task.
 ## Manual steps checklist
 
 - [ ] **Complete the GitHub connection OAuth grant** (one-time, in a browser,
-  as a github.com/shottah admin), then re-run `bash infra/create-trigger.sh` to
+  as a github.com/strata-lab admin), then re-run `bash infra/create-trigger.sh` to
   create the `api-deploy` trigger. The URL is printed by the script
   (`gcloud builds connections describe lineup-github --region=us-central1`
   shows it under `installationState.actionUri`).
