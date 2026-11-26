@@ -12,7 +12,7 @@ PROJECT_ID="${PROJECT_ID:-lineup-app-ae6b}"
 REGION="${REGION:-us-central1}"
 CONNECTION_NAME="${CONNECTION_NAME:-lineup-github}"
 REPO_ID="${REPO_ID:-lineup}"
-REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/shottah/lineup.git}"
+REPO_REMOTE_URI="${REPO_REMOTE_URI:-https://github.com/strata-lab/lineup.git}"
 TRIGGER_NAME="${TRIGGER_NAME:-api-deploy}"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
@@ -109,7 +109,7 @@ if [[ "$CONN_STAGE" != "COMPLETE" ]]; then
     --project="$PROJECT_ID" --format='value(installationState.actionUri)')"
   echo ""
   echo "Connection '$CONNECTION_NAME' is not yet usable (state: $CONN_STAGE)."
-  echo "A human with admin access to github.com/shottah/lineup must complete the"
+  echo "A human with admin access to github.com/strata-lab/lineup must complete the"
   echo "one-time OAuth + GitHub App install in a browser, then re-run this script."
   echo ""
   if [[ -n "$ACTION_URI" ]]; then
