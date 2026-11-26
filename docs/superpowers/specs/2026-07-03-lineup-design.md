@@ -56,7 +56,7 @@ Users promote watchlist titles into the **rotation** — the actively-watched se
 
 ### Schedule preferences
 
-Per weekday: enabled/disabled + viewing window (default 19:00–23:00). Movies are only scheduled on days whose window fits their runtime. Max one episode per series per day.
+Per weekday: enabled/disabled + viewing window (default 19:00–23:00). Movies are only scheduled on days whose window fits their runtime. A night prefers different series, but once nothing else fits it keeps going with the next episodes of a series already on it (back to back) until the window is full.
 
 ### The guide
 
@@ -80,9 +80,9 @@ Deterministic greedy scheduler, seeded per guide (`guides.seed`): same inputs �
 
 **Hard constraints:**
 1. Items fit entirely within the day's viewing window.
-2. ≤ 1 episode per series per day.
+2. Episodes of a series run in order; a series repeats on the same night (back to back) only when no other series fits.
 3. Currently-airing series are never scheduled before an episode's real air date; when an air date falls in range, that episode is pinned to its air night (appointment TV).
-4. A title is only placed on a service that actually carries it in the user's region.
+4. A title is only placed on a service that actually carries it in the user's region. Subscription (stream) services are used when there are any; otherwise rental, then purchase services, and the item is labelled Rent or Buy so the user knows it costs extra.
 
 **Soft constraints (scoring, applied greedily per slot):**
 - **Fairness:** round-robin so every rotation title appears ≥ 1×/week when capacity allows.
@@ -158,7 +158,7 @@ lineup/
 
 ## Testing
 
-- **Guide engine (deepest coverage):** table-driven Go tests — determinism (same seed → same guide), window fitting, air-date pinning, one-episode-per-day, round-robin fairness, variety, service cohesion, regenerate-preserves-pins-and-edits, pointer advancement/auto-complete.
+- **Guide engine (deepest coverage):** table-driven Go tests — determinism (same seed → same guide), window fitting, air-date pinning, back-to-back fill, round-robin fairness, variety, service cohesion, regenerate-preserves-pins-and-edits, pointer advancement/auto-complete.
 - **Handlers:** `httptest` against fake stores; auth middleware unit tests.
 - **External clients:** TMDB/TVMaze parsers against recorded JSON fixtures.
 - **Web:** typecheck + lint; render tests of both guide views from fixture data.

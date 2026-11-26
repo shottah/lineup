@@ -39,13 +39,25 @@ type AiredEpisode struct {
 	Date    string
 }
 
+// Offer is how a title is available on its providers in the user's region:
+// included with a subscription, or a paid rental/purchase. One title's
+// providers always share a single offer type (ingest never mixes them).
+const (
+	OfferStream = "stream"
+	OfferRent   = "rent"
+	OfferBuy    = "buy"
+)
+
 // Title is a fully hydrated rotation entry.
 type Title struct {
-	ID             string
-	Kind           string // "movie" | "series"
-	Name           string
-	Runtime        int // minutes
-	Providers      []int64
+	ID        string
+	Kind      string // "movie" | "series"
+	Name      string
+	Runtime   int // minutes
+	Providers []int64
+	// Offer applies to every id in Providers (OfferStream/Rent/Buy). It is
+	// copied onto every item placed for this title.
+	Offer          string
 	Airing         bool
 	Pointer        Pointer
 	SeasonEpisodes map[int]int
@@ -62,9 +74,11 @@ type Item struct {
 	Season   int
 	Episode  int
 	Provider int64
-	IsPlan   bool
-	Pinned   bool
-	Edited   bool
+	// Offer is the title's offer type on Provider (see OfferStream).
+	Offer  string
+	IsPlan bool
+	Pinned bool
+	Edited bool
 	// Watched passes through keeps untouched, so issue #14 can round-trip
 	// guide_items rows without re-joining; place() never sets it.
 	Watched bool
@@ -104,7 +118,7 @@ type engine struct {
 	air         map[string]map[epKey]string
 	days        []*dayState
 	dayByDate   map[string]*dayState
-	placedEps   map[string]map[epKey]bool
+	placedEps   map[string]map[epKey]string // titleID -> episode -> date placed
 	placedCount map[string]int
 	moviePlaced map[string]bool
 	out         []Item
@@ -118,7 +132,7 @@ func Generate(in Input) []Item {
 		byID:        map[string]*Title{},
 		air:         map[string]map[epKey]string{},
 		dayByDate:   map[string]*dayState{},
-		placedEps:   map[string]map[epKey]bool{},
+		placedEps:   map[string]map[epKey]string{},
 		placedCount: map[string]int{},
 		moviePlaced: map[string]bool{},
 	}
@@ -173,22 +187,28 @@ func Generate(in Input) []Item {
 	return e.out
 }
 
-func (e *engine) markPlaced(titleID string, k epKey) {
+func (e *engine) markPlaced(titleID string, k epKey, date string) {
 	if e.placedEps[titleID] == nil {
-		e.placedEps[titleID] = map[epKey]bool{}
+		e.placedEps[titleID] = map[epKey]string{}
 	}
-	e.placedEps[titleID][k] = true
+	e.placedEps[titleID][k] = date
+}
+
+func (e *engine) isPlaced(titleID string, k epKey) bool {
+	_, ok := e.placedEps[titleID][k]
+	return ok
 }
 
 // place appends a plan item and updates all state.
 func (e *engine) place(ds *dayState, t *Title, season, episode int, provider int64, pinned bool) {
 	e.out = append(e.out, Item{Date: ds.date, StartMin: ds.nextMin, EndMin: ds.nextMin + t.Runtime,
-		TitleID: t.ID, Season: season, Episode: episode, Provider: provider, IsPlan: true, Pinned: pinned})
+		TitleID: t.ID, Season: season, Episode: episode, Provider: provider, Offer: t.Offer,
+		IsPlan: true, Pinned: pinned})
 	ds.nextMin += t.Runtime
 	ds.series[t.ID] = true
 	ds.providers[provider] = true
 	if t.Kind == "series" {
-		e.markPlaced(t.ID, epKey{season, episode})
+		e.markPlaced(t.ID, epKey{season, episode}, ds.date)
 	} else {
 		e.moviePlaced[t.ID] = true
 	}
@@ -230,7 +250,7 @@ func (e *engine) passKeep(keep []Item) {
 			}
 		}
 		if k.Season > 0 {
-			e.markPlaced(k.TitleID, epKey{k.Season, k.Episode})
+			e.markPlaced(k.TitleID, epKey{k.Season, k.Episode}, k.Date)
 		} else if t := e.byID[k.TitleID]; t != nil && t.Kind == "movie" {
 			e.moviePlaced[k.TitleID] = true
 		}
@@ -260,11 +280,13 @@ func (e *engine) passAirPins() {
 				continue
 			}
 			k := epKey{a.Season, a.Episode}
-			if e.placedEps[t.ID][k] {
+			if e.isPlaced(t.ID, k) {
 				continue
 			}
+			// No series-on-day check: two episodes airing the same night
+			// (a double premiere) both pin, back to back.
 			ds := e.dayByDate[a.Date]
-			if ds == nil || !ds.enabled() || ds.series[t.ID] || ds.remaining() < t.Runtime {
+			if ds == nil || !ds.enabled() || ds.remaining() < t.Runtime {
 				continue
 			}
 			e.place(ds, t, a.Season, a.Episode, e.pickProvider(t, ds), true)
@@ -325,7 +347,7 @@ func (e *engine) nextEpisode(t *Title) (epKey, bool) {
 			continue
 		}
 		k := epKey{s, ep}
-		if !e.placedEps[t.ID][k] {
+		if !e.isPlaced(t.ID, k) {
 			return k, true
 		}
 		ep++
@@ -344,16 +366,32 @@ func (e *engine) nextEpisode(t *Title) (epKey, bool) {
 // aired either) could slip into the guide early under this rule. Accepted:
 // airings refresh daily, so it self-corrects once TVMaze publishes the
 // date.
+//
+// Episode order also holds across nights: k never lands on a date before
+// an earlier episode of the same series already placed (an air pin or a
+// keep). Without this, back-to-back fill would slip the episodes after a
+// pinned future episode in ahead of it.
 func (e *engine) schedulable(t *Title, k epKey, date string) bool {
-	if !t.Airing {
-		return true
+	if t.Airing {
+		if d, ok := e.air[t.ID][k]; ok && d > date {
+			return false
+		}
 	}
-	d, ok := e.air[t.ID][k]
-	return !ok || d <= date
+	for j, d := range e.placedEps[t.ID] {
+		if d > date && (j.season < k.season || (j.season == k.season && j.episode < k.episode)) {
+			return false
+		}
+	}
+	return true
 }
 
 // passFill greedily fills remaining capacity day by day using the fixed
 // scoring weights (fairness -2/placement, variety -3, cohesion +2).
+//
+// Variety comes first: each slot is picked among series not yet on
+// tonight's plan. Only when none of those fits does a series already on
+// tonight's plan get its next episode, so a small rotation still fills the
+// window with back-to-back episodes instead of leaving the evening empty.
 func (e *engine) passFill() {
 	type cand struct {
 		t *Title
@@ -364,32 +402,42 @@ func (e *engine) passFill() {
 			continue
 		}
 		for {
-			best := -1 << 30
 			var ties []cand
-			for i := range e.titles {
-				t := &e.titles[i]
-				if t.Kind != "series" || len(t.Providers) == 0 || ds.series[t.ID] || ds.remaining() < t.Runtime {
-					continue
-				}
-				k, ok := e.nextEpisode(t)
-				if !ok || !e.schedulable(t, k, ds.date) {
-					continue
-				}
-				score := -2 * e.placedCount[t.ID]
-				if di > 0 && e.days[di-1].series[t.ID] {
-					score -= 3
-				}
-				for _, p := range t.Providers {
-					if ds.providers[p] {
-						score += 2
-						break
+			for _, repeat := range []bool{false, true} {
+				best := -1 << 30
+				for i := range e.titles {
+					t := &e.titles[i]
+					if t.Kind != "series" || len(t.Providers) == 0 || ds.series[t.ID] != repeat || ds.remaining() < t.Runtime {
+						continue
+					}
+					// A zero runtime would never consume capacity; never
+					// repeat it or the night would absorb the whole series.
+					if repeat && t.Runtime <= 0 {
+						continue
+					}
+					k, ok := e.nextEpisode(t)
+					if !ok || !e.schedulable(t, k, ds.date) {
+						continue
+					}
+					score := -2 * e.placedCount[t.ID]
+					if di > 0 && e.days[di-1].series[t.ID] {
+						score -= 3
+					}
+					for _, p := range t.Providers {
+						if ds.providers[p] {
+							score += 2
+							break
+						}
+					}
+					switch {
+					case score > best:
+						best, ties = score, []cand{{t, k}}
+					case score == best:
+						ties = append(ties, cand{t, k})
 					}
 				}
-				switch {
-				case score > best:
-					best, ties = score, []cand{{t, k}}
-				case score == best:
-					ties = append(ties, cand{t, k})
+				if len(ties) > 0 {
+					break
 				}
 			}
 			if len(ties) == 0 {
@@ -429,6 +477,9 @@ func (e *engine) passAlternates() {
 		var prefer, rest []Item
 		for i := range e.titles {
 			t := &e.titles[i]
+			// ds.series means "on tonight's plan" (possibly several times,
+			// back to back): such a title is never offered as an alternate,
+			// since its next episode is already lined up tonight.
 			if t.ID == p.TitleID || len(t.Providers) == 0 || t.Runtime > limit || ds.series[t.ID] {
 				continue
 			}
@@ -450,7 +501,7 @@ func (e *engine) passAlternates() {
 				}
 			}
 			alt := Item{Date: p.Date, StartMin: p.StartMin, EndMin: p.StartMin + t.Runtime,
-				TitleID: t.ID, Season: season, Episode: episode, Provider: prov, IsPlan: false}
+				TitleID: t.ID, Season: season, Episode: episode, Provider: prov, Offer: t.Offer, IsPlan: false}
 			if prov != p.Provider {
 				prefer = append(prefer, alt)
 			} else {
