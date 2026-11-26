@@ -136,6 +136,9 @@ echo "== 5. Build trigger =="
 # Fires on API code and on the build/runtime config the pipeline reads, so a
 # change to run-service.yaml (env, scaling) deploys too. clouddeploy.yaml is
 # excluded: pipeline changes take effect via `gcloud deploy apply`, not a build.
+# --service-account is required: without it the API answers a bare
+# INVALID_ARGUMENT. A user-set SA also needs a logging option, which
+# cloudbuild.yaml sets (CLOUD_LOGGING_ONLY).
 if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud builds triggers create github \
@@ -145,6 +148,7 @@ if ! gcloud builds triggers describe "$TRIGGER_NAME" --region="$REGION" \
     --branch-pattern='^main$' \
     --included-files='api/**,infra/cloudbuild.yaml,infra/run-service.yaml,infra/skaffold.yaml' \
     --build-config=infra/cloudbuild.yaml \
+    --service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
     --project="$PROJECT_ID" -q
 fi
 
