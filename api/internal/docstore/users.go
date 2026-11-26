@@ -20,6 +20,10 @@ type User struct {
 	DisplayName   string          `json:"display_name"`
 	Region        string          `json:"region"`
 	SchedulePrefs json.RawMessage `json:"schedule_prefs"`
+	// Timezone is an IANA zone name (e.g. "America/Chicago") reported by
+	// the web client; it decides what "today" means for this user. Empty
+	// means UTC.
+	Timezone string `json:"timezone"`
 }
 
 type userDoc struct {
@@ -27,6 +31,7 @@ type userDoc struct {
 	DisplayName   string         `firestore:"displayName"`
 	Region        string         `firestore:"region"`
 	SchedulePrefs map[string]any `firestore:"schedulePrefs"`
+	Timezone      string         `firestore:"timezone"`
 	CreatedAt     time.Time      `firestore:"createdAt"`
 	UpdatedAt     time.Time      `firestore:"updatedAt"`
 }
@@ -40,7 +45,7 @@ func (d *userDoc) user(id string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &User{ID: id, Email: d.Email, DisplayName: d.DisplayName, Region: d.Region, SchedulePrefs: raw}, nil
+	return &User{ID: id, Email: d.Email, DisplayName: d.DisplayName, Region: d.Region, SchedulePrefs: raw, Timezone: d.Timezone}, nil
 }
 
 // prefsMap converts a JSON object into a Firestore map; empty or null input
@@ -134,16 +139,27 @@ func (s *Store) UpsertUserByFirebaseUID(ctx context.Context, uid, email, display
 	return out, nil
 }
 
-// UpdateUserPrefs updates region and/or schedulePrefs; nil/empty arguments
-// leave the corresponding field untouched. It fails if the user is missing.
-func (s *Store) UpdateUserPrefs(ctx context.Context, userID string, region *string, prefsJSON json.RawMessage) (*User, error) {
+// UserPrefsUpdate carries PATCH /v1/me semantics: nil/empty fields are
+// left untouched. Callers validate values (region non-empty, prefs shape,
+// timezone loadable) before calling.
+type UserPrefsUpdate struct {
+	Region        *string
+	SchedulePrefs json.RawMessage
+	// Timezone "" (non-nil) clears it back to UTC.
+	Timezone *string
+}
+
+// UpdateUserPrefs applies upd to the user doc. It fails if the user is
+// missing.
+func (s *Store) UpdateUserPrefs(ctx context.Context, userID string, upd UserPrefsUpdate) (*User, error) {
 	if !validID(userID) {
 		return nil, fmt.Errorf("docstore: update user prefs: invalid user id %q", userID)
 	}
+	region := upd.Region
 	var prefs map[string]any
-	if len(prefsJSON) > 0 {
+	if len(upd.SchedulePrefs) > 0 {
 		var err error
-		if prefs, err = prefsMap(prefsJSON); err != nil {
+		if prefs, err = prefsMap(upd.SchedulePrefs); err != nil {
 			return nil, fmt.Errorf("docstore: update user prefs: prefs: %w", err)
 		}
 	}
@@ -168,6 +184,10 @@ func (s *Store) UpdateUserPrefs(ctx context.Context, userID string, region *stri
 		if prefs != nil {
 			d.SchedulePrefs = prefs
 			ups = append(ups, firestore.Update{Path: "schedulePrefs", Value: prefs})
+		}
+		if upd.Timezone != nil {
+			d.Timezone = *upd.Timezone
+			ups = append(ups, firestore.Update{Path: "timezone", Value: *upd.Timezone})
 		}
 		if err := tx.Update(ref, ups); err != nil {
 			return err

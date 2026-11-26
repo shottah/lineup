@@ -18,6 +18,7 @@ type fakeTMDB struct {
 	movie                          tmdb.Movie
 	tv                             tmdb.TV
 	provs                          []tmdb.Provider
+	offerType                      string // "" means stream when provs is non-empty
 	movieErr, tvErr, provErr       error
 	movieCalls, tvCalls, provCalls int
 	provRegion                     string
@@ -31,10 +32,14 @@ func (f *fakeTMDB) TVDetails(_ context.Context, _ int64) (tmdb.TV, error) {
 	f.tvCalls++
 	return f.tv, f.tvErr
 }
-func (f *fakeTMDB) WatchProviders(_ context.Context, _ string, _ int64, region string) ([]tmdb.Provider, error) {
+func (f *fakeTMDB) WatchProviders(_ context.Context, _ string, _ int64, region string) (tmdb.WatchOffer, error) {
 	f.provCalls++
 	f.provRegion = region
-	return f.provs, f.provErr
+	typ := f.offerType
+	if typ == "" && len(f.provs) > 0 {
+		typ = tmdb.OfferStream
+	}
+	return tmdb.WatchOffer{Type: typ, Providers: f.provs}, f.provErr
 }
 
 type fakeTVMaze struct {
@@ -65,6 +70,7 @@ type fakeStore struct {
 	title                                           *docstore.Title
 	seasons                                         []docstore.SeasonRow
 	provsByRegion                                   map[string][]docstore.ProviderRow
+	offerByRegion                                   map[string]string
 	airings                                         []docstore.AiringRow
 	airToday                                        string
 	getErr, upsertErr, seasonsErr, provsErr, airErr error
@@ -110,15 +116,21 @@ func (f *fakeStore) ReplaceSeasons(_ context.Context, _ string, seasons []docsto
 	return nil
 }
 
-func (f *fakeStore) ReplaceProviders(_ context.Context, _ string, region string, provs []docstore.ProviderRow) error {
+func (f *fakeStore) ReplaceProviders(_ context.Context, _ string, region, offer string, provs []docstore.ProviderRow) error {
 	f.provCalls++
 	if f.provsErr != nil {
 		return f.provsErr
 	}
 	if f.provsByRegion == nil {
 		f.provsByRegion = map[string][]docstore.ProviderRow{}
+		f.offerByRegion = map[string]string{}
 	}
 	f.provsByRegion[region] = provs
+	f.offerByRegion[region] = offer
+	if f.title.ProviderOffers == nil {
+		f.title.ProviderOffers = map[string]string{}
+	}
+	f.title.ProviderOffers[region] = offer
 	f.title.ProvidersRefreshedAt = now
 	return nil
 }
@@ -144,6 +156,7 @@ func airingSeries(tvmazeID *int64) *docstore.Title {
 		ID: "series-1399", TMDBID: 1399, Kind: "series", TVMazeID: tvmazeID, Name: "GoT",
 		Airing: true, RefreshedAt: now.Add(-time.Hour),
 		ProvidersRefreshedAt: now.Add(-time.Hour), AiringsRefreshedAt: now.Add(-time.Hour),
+		ProviderOffers: map[string]string{"US": tmdb.OfferStream},
 	}
 }
 
@@ -176,6 +189,48 @@ func TestFreshMovie(t *testing.T) {
 	}
 	if tm.provRegion != "US" || len(st.provsByRegion["US"]) != 1 || st.provsByRegion["US"][0].Name != "Netflix" {
 		t.Fatalf("providers = %+v (region %q)", st.provsByRegion, tm.provRegion)
+	}
+}
+
+func TestFreshMovieRentOnly(t *testing.T) {
+	tm := &fakeTMDB{
+		movie:     tmdb.Movie{TMDBID: 79, Name: "Hero", RuntimeMinutes: 99},
+		provs:     []tmdb.Provider{{ID: 2, Name: "Apple TV"}, {ID: 10, Name: "Amazon Video"}},
+		offerType: tmdb.OfferRent,
+	}
+	st := &fakeStore{}
+	if _, err := svc(tm, &fakeTVMaze{}, st).EnsureTitle(context.Background(), "movie", 79, "US"); err != nil {
+		t.Fatalf("EnsureTitle: %v", err)
+	}
+	if st.offerByRegion["US"] != tmdb.OfferRent || len(st.provsByRegion["US"]) != 2 {
+		t.Fatalf("stored offer %q providers %+v, want rent with 2 providers", st.offerByRegion["US"], st.provsByRegion["US"])
+	}
+}
+
+// TestProvidersRefreshWhenOfferUnrecorded: docs ingested before offers
+// existed hold flatrate-only data and no offer for the region. Even with a
+// fresh stamp they refresh once, so rent/buy fallbacks reach them.
+func TestProvidersRefreshWhenOfferUnrecorded(t *testing.T) {
+	cached := airingSeries(int64p(82))
+	cached.ProviderOffers = nil // legacy doc, stamp still fresh
+	tm := &fakeTMDB{provs: []tmdb.Provider{{ID: 10, Name: "Amazon Video"}}, offerType: tmdb.OfferBuy}
+	st := &fakeStore{title: cached}
+	if _, err := svc(tm, &fakeTVMaze{}, st).EnsureTitle(context.Background(), "series", 1399, "US"); err != nil {
+		t.Fatalf("EnsureTitle: %v", err)
+	}
+	if tm.provCalls != 1 || st.offerByRegion["US"] != tmdb.OfferBuy {
+		t.Fatalf("prov calls %d, stored offer %q; want 1 refresh recording buy", tm.provCalls, st.offerByRegion["US"])
+	}
+
+	// A region recorded as having nothing ("") is fresh, not unrecorded.
+	cached2 := airingSeries(int64p(82))
+	cached2.ProviderOffers = map[string]string{"US": ""}
+	tm2 := &fakeTMDB{}
+	if _, err := svc(tm2, &fakeTVMaze{}, &fakeStore{title: cached2}).EnsureTitle(context.Background(), "series", 1399, "US"); err != nil {
+		t.Fatalf("EnsureTitle: %v", err)
+	}
+	if tm2.provCalls != 0 {
+		t.Fatalf("recorded-empty region refreshed (%d calls), want none until TTL", tm2.provCalls)
 	}
 }
 

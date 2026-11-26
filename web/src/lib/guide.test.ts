@@ -8,6 +8,7 @@ import {
   layoutDayColumns,
   monthDay,
   nowLineFactor,
+  offerLabel,
   snap15,
   snapDragDelta,
   toBoardRows,
@@ -347,7 +348,7 @@ describe("toTimeGrid", () => {
     providers: { "8": { id: 8, name: "Netflix", logo_path: "" } },
   } as unknown as GuideResponse;
 
-  it("computes the window from plan items only, floored/ceiled to the hour", () => {
+  it("without windows in the response, falls back to plan items, floored/ceiled to the hour", () => {
     const grid = toTimeGrid(g, "2026-07-20");
     expect(grid.windowStart).toBe(1080); // floor(1110/60)*60 = 18:00
     expect(grid.windowEnd).toBe(1380); // ceil(1350/60)*60 = 23:00
@@ -372,5 +373,64 @@ describe("toTimeGrid", () => {
     const grid = toTimeGrid(empty, "2026-07-20");
     expect(grid.windowHours).toBe(0);
     expect(grid.days.every((d) => d.items.length === 0)).toBe(true);
+  });
+
+  // The production bug: one 19:00-19:24 episode used to yield a 1-hour axis
+  // stretched over the viewport, so the card looked like it filled the
+  // evening. The axis now spans the viewing windows.
+  const evenings = [
+    { date: "2026-07-20", start_min: 1140, end_min: 1380 },
+    { date: "2026-07-21", start_min: 1140, end_min: 1380 },
+  ];
+
+  it("spans the viewing windows, not just the items", () => {
+    const short = { ...g, windows: evenings, items: [gi({ id: "i1", date: "2026-07-20", start_min: 1140, end_min: 1164 })] } as GuideResponse;
+    const grid = toTimeGrid(short, "2026-07-20");
+    expect(grid.windowStart).toBe(1140);
+    expect(grid.windowEnd).toBe(1380);
+    expect(grid.windowHours).toBe(4);
+    expect(grid.days[0].items[0].spanFactor).toBeCloseTo(24 / 60);
+  });
+
+  it("unions differing windows across days", () => {
+    const mixed = {
+      ...g,
+      windows: [
+        { date: "2026-07-20", start_min: 1110, end_min: 1320 }, // 18:30-22:00
+        { date: "2026-07-21", start_min: 1140, end_min: 1380 }, // 19:00-23:00
+      ],
+      items: [],
+    } as GuideResponse;
+    const grid = toTimeGrid(mixed, "2026-07-20");
+    expect(grid.windowStart).toBe(1080); // floored to 18:00
+    expect(grid.windowEnd).toBe(1380);
+  });
+
+  it("widens to include an item outside the windows (e.g. dragged late)", () => {
+    const late = { ...g, windows: evenings, items: [gi({ id: "i1", date: "2026-07-21", start_min: 1380, end_min: 1425 })] } as GuideResponse;
+    const grid = toTimeGrid(late, "2026-07-20");
+    expect(grid.windowStart).toBe(1140);
+    expect(grid.windowEnd).toBe(1440);
+  });
+
+  it("renders the full axis for a guide with no items", () => {
+    const empty = { ...g, windows: evenings, items: [] } as GuideResponse;
+    const grid = toTimeGrid(empty, "2026-07-20");
+    expect(grid.windowHours).toBe(4);
+    expect(grid.days).toHaveLength(2);
+  });
+
+  it("ignores windows for dates outside the guide range", () => {
+    const stray = { ...g, windows: [...evenings, { date: "2026-07-25", start_min: 600, end_min: 700 }], items: [] } as GuideResponse;
+    expect(toTimeGrid(stray, "2026-07-20").windowStart).toBe(1140);
+  });
+});
+
+describe("offerLabel", () => {
+  it("labels paid offers and leaves streaming unlabelled", () => {
+    expect(offerLabel(gi({ offer: "rent" }))).toBe("Rent");
+    expect(offerLabel(gi({ offer: "buy" }))).toBe("Buy");
+    expect(offerLabel(gi({ offer: "stream" }))).toBeNull();
+    expect(offerLabel(gi({}))).toBeNull(); // pre-offer payloads
   });
 });

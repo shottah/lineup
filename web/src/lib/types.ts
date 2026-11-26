@@ -17,6 +17,9 @@ export type User = {
   display_name: string;
   region: string;
   schedule_prefs: SchedulePrefs;
+  // IANA zone ("America/Chicago") the API uses for "today"; "" means UTC.
+  // Kept in sync with the browser's zone by TimezoneSync.
+  timezone: string;
 };
 
 // --- Search + title pages (#16). Mirrors /v1/search and /v1/titles JSON
@@ -81,10 +84,17 @@ export type Entry = {
   watched_at: string | null;
 };
 
+// How a title is available on its providers in the user's region: with a
+// subscription, or as a paid rental/purchase (API falls back stream > rent
+// > buy and never mixes them).
+export type Offer = "stream" | "rent" | "buy";
+
 export type TitleFull = {
   title: Title;
   seasons: SeasonRow[];
   providers: ProviderRow[];
+  // "" when there are no providers. Optional for pre-offer API payloads.
+  offer?: Offer | "";
   entry: Entry | null;
 };
 
@@ -107,6 +117,9 @@ export type GuideItem = {
   season: number;
   episode: number;
   provider_id: number;
+  // Optional so payloads from an API deploy that predates offers still
+  // type-check; absent means "stream".
+  offer?: Offer;
   is_plan: boolean;
   pinned: boolean;
   edited: boolean;
@@ -128,4 +141,14 @@ export type GuideResponse = {
   items: GuideItem[];
   titles: Record<string, GuideTitleLookup>;
   providers: Record<string, ProviderRow>;
+  // Enabled viewing window per guide day (disabled days absent), from the
+  // user's current prefs. Sizes the calendar axis. Optional for older API
+  // payloads.
+  windows?: GuideDayWindow[];
+};
+
+export type GuideDayWindow = {
+  date: string; // "YYYY-MM-DD"
+  start_min: number;
+  end_min: number;
 };

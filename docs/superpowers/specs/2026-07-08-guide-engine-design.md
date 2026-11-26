@@ -26,6 +26,26 @@ Final-review follow-ups (2026-07-08):
   a deliberate refinement (†): a long day that's already loaded up with
   keeps/pins shouldn't out-rank a shorter day that's still wide open.
 
+Amendment (2026-11-25, production feedback):
+
+- The "at most one episode per series per day" hard constraint is gone.
+  With a single series in rotation and a 4-hour window it left the
+  evening almost empty (one 24-minute episode per night). The fill pass
+  still prefers variety: it picks among series not yet on tonight's plan
+  first, and only when none of them fits does it add the next episode of
+  a series already on tonight's plan, so the window fills back to back.
+  Scoring weights are unchanged.
+- Episode order holds across nights: an episode is never placed on a date
+  before an earlier episode of the same series that is already placed (an
+  air pin or a keep). This keeps back-to-back fill from slipping episodes
+  in ahead of a pinned future air night.
+- Air pins no longer skip a night that already has the series, so two
+  episodes airing the same night both pin.
+- Titles and items carry an `Offer` ("stream" | "rent" | "buy"): the
+  region's subscription providers when there are any, else rental, else
+  purchase providers. The engine copies the title's offer onto every item
+  and alternate; it does not score on it.
+
 ## Shape
 
 `api/internal/guide` — pure package: no store imports, no clock, no I/O,
@@ -75,8 +95,8 @@ type Input struct{ Seed int64; Days []Day; Titles []Title; Keep []Item }
 3. **Air-date pinning** — for each airing series (sorted ID, then
    season/episode): every not-yet-placed episode at-or-after the pointer
    whose air date falls on an in-range, enabled day is placed on exactly
-   that day (constraints permitting: fits remaining window, series not
-   already on that day). Air-pinned items get `Pinned: true` † (appointment
+   that day (constraints permitting: fits remaining window; a second
+   episode airing the same night pins too). Air-pinned items get `Pinned: true` † (appointment
    TV survives regeneration semantically; regeneration also reproduces them
    deterministically).
 4. **Movies to longest days** — movies sorted by ID; each placed once † on
@@ -86,10 +106,13 @@ type Input struct{ Seed int64; Days []Day; Titles []Title; Keep []Item }
    eligible series: `-2 × placements so far` (fairness; keeps and pins
    count †) `- 3 if placed on the previous day` (variety)
    `+ 2 if one of its providers is already on tonight's plan` (cohesion).
-   Eligible = has a next episode schedulable today (airing rule below),
-   runtime fits remaining window, not already on this day, has ≥1 provider
-   (hard constraint 4). Highest score wins; ties → rng among tied
-   candidates (iterated in title-ID order). Provider choice: a provider
+   Eligible = has a next episode schedulable today (airing rule and
+   episode order below), runtime fits remaining window, has ≥1 provider
+   (hard constraint 4). Candidates are tiered: series not yet on tonight's
+   plan first; only when that tier is empty are series already on
+   tonight's plan considered (back-to-back episodes). Within a tier the
+   highest score wins; ties → rng among tied candidates (iterated in
+   title-ID order). Provider choice: a provider
    already on tonight if any (lowest id), else lowest id †.
 6. **Pointer sequencing** — successive placements of a series consume
    successive episodes from `Pointer`, skipping already-placed ones,
@@ -97,9 +120,13 @@ type Input struct{ Seed int64; Days []Day; Titles []Title; Keep []Item }
    episodes is exhausted. **Airing rule:** for `Airing` titles, an episode
    is schedulable on date d only if its air date is known and ≤ d; unknown
    air date = not yet aired = not schedulable †. Non-airing titles are
-   unrestricted.
+   unrestricted. (Superseded by the airing-back-catalog fix: a missing air
+   date now means back catalog, schedulable; see `schedulable` in
+   guide.go.) **Episode order:** an episode is never schedulable on a date
+   before an earlier episode of the same series that is already placed.
 7. **Alternates** — each plan slot gets up to 3 alternates (`IsPlan:
-   false`, same Date/StartMin): other titles whose next episode/runtime
+   false`, same Date/StartMin): other titles not on tonight's plan whose
+   next episode/runtime
    fits from the slot's start to the window end †, schedulable that day
    (airing rule), provider-diverse — candidates on a provider different
    from the plan item's come first †, then by title ID. Alternates consume
@@ -108,15 +135,17 @@ type Input struct{ Seed int64; Days []Day; Titles []Title; Keep []Item }
 
 ## Hard constraints (v1 spec, enforced throughout)
 
-Fits entirely within the day's window; ≤1 episode per series per day;
-airing episodes never before their air date (air-date episodes pinned to
+Fits entirely within the day's window; episodes of a series in order
+(back-to-back repeats allowed once no other series fits, see the
+2026-11-25 amendment); airing episodes never before their air date (air-date episodes pinned to
 their air night); title only on a provider that carries it.
 
 ## Testing
 
 Table-driven, pure, the issue's nine names exactly: TestDeterministic
 (same input twice → deep-equal; different seed may differ),
-TestFitsWindow, TestOneEpisodePerSeriesPerDay, TestFairness (ample
+TestFitsWindow, TestOneEpisodePerSeriesPerDay (replaced on 2026-11-25 by
+TestBackToBackFillsWindow and TestVarietyBeforeRepeats), TestFairness (ample
 capacity → every title ≥1×, counts spread ≤1 apart †), TestAirdatePin,
 TestMovieOnLongestDay, TestRegeneratePreservesKeep, TestAlternates (≤3,
 provider-diverse, no pointer movement), TestPointerSequence (successive

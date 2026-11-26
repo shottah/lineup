@@ -31,7 +31,7 @@ var ErrTitleNotFound = errors.New("ingest: title not found")
 type MetadataClient interface {
 	MovieDetails(ctx context.Context, id int64) (tmdb.Movie, error)
 	TVDetails(ctx context.Context, id int64) (tmdb.TV, error)
-	WatchProviders(ctx context.Context, kind string, id int64, region string) ([]tmdb.Provider, error)
+	WatchProviders(ctx context.Context, kind string, id int64, region string) (tmdb.WatchOffer, error)
 }
 
 // AiringsClient is the slice of *tvmaze.Client ingestion needs.
@@ -45,7 +45,7 @@ type TitleStore interface {
 	GetTitleByTMDB(ctx context.Context, kind string, tmdbID int64) (*docstore.Title, error)
 	UpsertTitle(ctx context.Context, u docstore.TitleUpsert) (*docstore.Title, error)
 	ReplaceSeasons(ctx context.Context, titleID string, seasons []docstore.SeasonRow) error
-	ReplaceProviders(ctx context.Context, titleID, region string, provs []docstore.ProviderRow) error
+	ReplaceProviders(ctx context.Context, titleID, region, offer string, provs []docstore.ProviderRow) error
 	ReplaceFutureAirings(ctx context.Context, titleID, today string, airs []docstore.AiringRow) error
 }
 
@@ -113,16 +113,24 @@ func (s *Service) EnsureTitle(ctx context.Context, kind string, tmdbID int64, re
 
 	// Providers class. Fetch failures skip the write so the stale stamp
 	// retries next hit; store failures are real errors (the DB is ours).
-	if s.stale(title.ProvidersRefreshedAt, providersTTL) {
-		if provs, perr := s.TMDB.WatchProviders(ctx, kind, tmdbID, region); perr == nil {
-			rows := make([]docstore.ProviderRow, 0, len(provs))
-			for _, p := range provs {
+	// A region with no recorded offer type is stale regardless of the
+	// stamp: docs ingested before offers existed hold flatrate-only data,
+	// and this also picks up a region the doc was never fetched for.
+	_, offerKnown := title.ProviderOffers[region]
+	if !offerKnown || s.stale(title.ProvidersRefreshedAt, providersTTL) {
+		if offer, perr := s.TMDB.WatchProviders(ctx, kind, tmdbID, region); perr == nil {
+			rows := make([]docstore.ProviderRow, 0, len(offer.Providers))
+			for _, p := range offer.Providers {
 				rows = append(rows, docstore.ProviderRow{ID: p.ID, Name: p.Name, LogoPath: p.LogoPath})
 			}
-			if err := s.Store.ReplaceProviders(ctx, title.ID, region, rows); err != nil {
+			if err := s.Store.ReplaceProviders(ctx, title.ID, region, offer.Type, rows); err != nil {
 				return nil, err
 			}
 			title.ProvidersRefreshedAt = s.now()
+			if title.ProviderOffers == nil {
+				title.ProviderOffers = map[string]string{}
+			}
+			title.ProviderOffers[region] = offer.Type
 		}
 	}
 

@@ -8,6 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { toBoardRows, toCalendarColumns, type BoardCell } from "@/lib/guide";
 import type { GuideResponse } from "@/lib/types";
 
+import { OfferBadge } from "./OfferBadge";
 import { ProviderChip } from "./ProviderChip";
 import { usePosterHue } from "./usePosterHue";
 
@@ -166,7 +167,10 @@ function BoardCellView({
           </div>
         )}
         <div className="text-[13px] font-semibold text-ink">{cell.title.name}</div>
-        <div className="mt-0.5 text-[10.5px] text-acc">{cell.sub}</div>
+        <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-acc">
+          <span>{cell.sub}</span>
+          <OfferBadge item={cell.item} />
+        </div>
       </div>
     );
   }
@@ -174,7 +178,10 @@ function BoardCellView({
   const body = (
     <>
       <div className="text-[13px] font-semibold text-mut">{cell.title.name}</div>
-      <div className="mt-0.5 text-[10.5px] text-faint">{cell.sub}</div>
+      <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-faint">
+        <span>{cell.sub}</span>
+        <OfferBadge item={cell.item} />
+      </div>
     </>
   );
 

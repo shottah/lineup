@@ -7,6 +7,9 @@ import { useToast } from "@/components/Providers";
 import { Segmented, type SegmentedOption } from "@/components/Segmented";
 import { api, ApiError } from "@/lib/api";
 import { monthDay, toCalendarColumns } from "@/lib/guide";
+// Local (not UTC) date: "today" for Tonight labeling and the board's
+// default day. Agrees with the API's today via TimezoneSync.
+import { todayLocal } from "@/lib/today";
 import type { GuideResponse } from "@/lib/types";
 
 import { BoardView } from "./BoardView";
@@ -20,15 +23,6 @@ const VIEW_OPTIONS: SegmentedOption<ViewMode>[] = [
   { value: "board", label: "Board" },
 ];
 
-// Local (not UTC) calendar date, YYYY-MM-DD — "today" for the calendar's
-// Tonight labeling and the board's default day.
-function todayLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 // Header + view toggle + regenerate, shown once a guide exists. Split
 // out from GuideBody so its hooks (view state, the regenerate mutation

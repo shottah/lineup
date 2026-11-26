@@ -159,7 +159,7 @@ func TestInvalidIDsAreNotFound(t *testing.T) {
 			_, titleKeyed["SwapTitle/user"] = s.SwapTitle(ctx, bad, seriesID, "US")
 			_, titleKeyed["GetTitleFull/title"] = s.GetTitleFull(ctx, uid, bad, "US")
 			titleKeyed["ReplaceSeasons"] = s.ReplaceSeasons(ctx, bad, nil)
-			titleKeyed["ReplaceProviders"] = s.ReplaceProviders(ctx, bad, "US", nil)
+			titleKeyed["ReplaceProviders"] = s.ReplaceProviders(ctx, bad, "US", "stream", nil)
 			titleKeyed["ReplaceFutureAirings"] = s.ReplaceFutureAirings(ctx, bad, "2026-01-01", nil)
 			for op, err := range titleKeyed {
 				if !errors.Is(err, ErrTitleNotFound) {
@@ -179,7 +179,7 @@ func TestInvalidIDsAreNotFound(t *testing.T) {
 			_, userOnly["CountRotation"] = s.CountRotation(ctx, bad, seriesID)
 			_, userOnly["GuideInputTitles"] = s.GuideInputTitles(ctx, bad, "US")
 			_, userOnly["CreateGuideReplacingOverlaps"] = s.CreateGuideReplacingOverlaps(ctx, bad, "2026-01-05", "2026-01-11", 1, nil)
-			_, userOnly["UpdateUserPrefs"] = s.UpdateUserPrefs(ctx, bad, strp("GB"), nil)
+			_, userOnly["UpdateUserPrefs"] = s.UpdateUserPrefs(ctx, bad, UserPrefsUpdate{Region: strp("GB")})
 			_, userOnly["UpsertUserByFirebaseUID"] = s.UpsertUserByFirebaseUID(ctx, bad, "", "", nil)
 			for op, err := range userOnly {
 				if err == nil {

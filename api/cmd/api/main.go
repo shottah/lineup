@@ -7,6 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Embedded zoneinfo: users' IANA timezones (see httpserver.userToday)
+	// must load even if the runtime image ships no /usr/share/zoneinfo.
+	_ "time/tzdata"
 
 	firebase "firebase.google.com/go/v4"
 

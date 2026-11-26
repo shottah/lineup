@@ -249,12 +249,12 @@ func TestGetTitleFullSeasonsAndProviders(t *testing.T) {
 	if err := s.ReplaceSeasons(ctx, ti.ID, []SeasonRow{{10, 8}, {2, 6}, {1, 10}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{
 		{ID: 8, Name: "Netflix", LogoPath: "/n.png"}, {ID: 9, Name: "Apple TV", LogoPath: "/a.png"}, {ID: 3, Name: "Zed", LogoPath: "/z.png"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "GB", []ProviderRow{{ID: 5, Name: "Other", LogoPath: "/o.png"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "GB", "stream", []ProviderRow{{ID: 5, Name: "Other", LogoPath: "/o.png"}}); err != nil {
 		t.Fatal(err)
 	}
 	full, err := s.GetTitleFull(ctx, uid, ti.ID, "US")

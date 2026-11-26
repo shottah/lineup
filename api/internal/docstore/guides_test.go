@@ -32,10 +32,10 @@ func seedGuideWorld(t *testing.T, s *Store) (userID, seriesID, movieID string) {
 	p901 := ProviderRow{ID: 901, Name: "P901"}
 	p902 := ProviderRow{ID: 902, Name: "P902"}
 	for _, r := range []struct {
-		title, region string
-		p             ProviderRow
-	}{{seriesID, "US", p901}, {movieID, "US", p902}, {seriesID, "GB", p902}} {
-		if err := s.ReplaceProviders(ctx, r.title, r.region, []ProviderRow{r.p}); err != nil {
+		title, region, offer string
+		p                    ProviderRow
+	}{{seriesID, "US", "stream", p901}, {movieID, "US", "rent", p902}, {seriesID, "GB", "stream", p902}} {
+		if err := s.ReplaceProviders(ctx, r.title, r.region, r.offer, []ProviderRow{r.p}); err != nil {
 			t.Fatalf("seed providers: %v", err)
 		}
 	}
@@ -97,6 +97,9 @@ func TestGuideInputTitles(t *testing.T) {
 	wantAir := []guide.AiredEpisode{{Season: 1, Episode: 1, Date: "2026-01-01"}, {Season: 1, Episode: 2, Date: "2026-01-06"}}
 	if !reflect.DeepEqual(ser.AirDates, wantAir) {
 		t.Fatalf("series airdates = %+v, want %+v", ser.AirDates, wantAir)
+	}
+	if ser.Offer != guide.OfferStream || mov.Offer != guide.OfferRent {
+		t.Fatalf("offers = series %q, movie %q; want stream, rent", ser.Offer, mov.Offer)
 	}
 	if mov.Kind != "movie" || mov.Runtime != 120 || len(mov.Providers) != 1 || mov.Providers[0] != 902 || len(mov.AirDates) != 0 {
 		t.Fatalf("movie hydration = %+v", mov)
@@ -173,8 +176,8 @@ func TestGuideLifecycle(t *testing.T) {
 
 	// Deliberately out of order: the stored guide comes back sorted.
 	items := []guide.Item{
-		{Date: "2026-01-06", StartMin: 1140, EndMin: 1300, TitleID: movieID, Provider: 902, IsPlan: true, Edited: true, Watched: true},
-		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, IsPlan: true, Pinned: true},
+		{Date: "2026-01-06", StartMin: 1140, EndMin: 1300, TitleID: movieID, Provider: 902, Offer: guide.OfferRent, IsPlan: true, Edited: true, Watched: true},
+		{Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID, Season: 1, Episode: 1, Provider: 901, Offer: guide.OfferStream, IsPlan: true, Pinned: true},
 	}
 	g, err := s.CreateGuideReplacingOverlaps(ctx, uid, "2026-01-05", "2026-01-11", 42, items)
 	if err != nil {
@@ -184,9 +187,9 @@ func TestGuideLifecycle(t *testing.T) {
 		t.Fatalf("created guide = %+v", g)
 	}
 	want0 := GuideItem{ID: g.Items[0].ID, Date: "2026-01-05", StartMin: 1140, EndMin: 1200, TitleID: seriesID,
-		Season: 1, Episode: 1, ProviderID: 901, IsPlan: true, Pinned: true}
+		Season: 1, Episode: 1, ProviderID: 901, Offer: guide.OfferStream, IsPlan: true, Pinned: true}
 	want1 := GuideItem{ID: g.Items[1].ID, Date: "2026-01-06", StartMin: 1140, EndMin: 1300, TitleID: movieID,
-		ProviderID: 902, IsPlan: true, Edited: true, Watched: true}
+		ProviderID: 902, Offer: guide.OfferRent, IsPlan: true, Edited: true, Watched: true}
 	if g.Items[0] != want0 || g.Items[1] != want1 {
 		t.Fatalf("items = %+v, want %+v / %+v", g.Items, want0, want1)
 	}

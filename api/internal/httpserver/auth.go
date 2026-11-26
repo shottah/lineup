@@ -16,7 +16,7 @@ import (
 // an interface so handler tests run without Firestore.
 type UserStore interface {
 	UpsertUserByFirebaseUID(ctx context.Context, firebaseUID, email, displayName string, defaultPrefs json.RawMessage) (*docstore.User, error)
-	UpdateUserPrefs(ctx context.Context, userID string, region *string, prefsJSON json.RawMessage) (*docstore.User, error)
+	UpdateUserPrefs(ctx context.Context, userID string, upd docstore.UserPrefsUpdate) (*docstore.User, error)
 }
 
 type ctxKey int

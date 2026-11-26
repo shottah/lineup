@@ -250,13 +250,71 @@ func TestWatchProviders(t *testing.T) {
 	if len(want) == 0 {
 		t.Fatal("fixture has no US flatrate entries; re-record Task 2")
 	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d providers, want %d (flatrate only): %+v", len(got), len(want), got)
+	if got.Type != OfferStream {
+		t.Fatalf("offer type = %q, want %q (fixture has flatrate)", got.Type, OfferStream)
+	}
+	if len(got.Providers) != len(want) {
+		t.Fatalf("got %d providers, want %d (flatrate only): %+v", len(got.Providers), len(want), got)
 	}
 	for i, w := range want {
-		if got[i].ID != w.ProviderID || got[i].Name != w.Name || got[i].LogoPath != w.LogoPath {
-			t.Fatalf("provider[%d] = %+v, want %+v", i, got[i], w)
+		if got.Providers[i].ID != w.ProviderID || got.Providers[i].Name != w.Name || got.Providers[i].LogoPath != w.LogoPath {
+			t.Fatalf("provider[%d] = %+v, want %+v", i, got.Providers[i], w)
 		}
+	}
+}
+
+// TestWatchProvidersFallback: with no flatrate offers the region falls back
+// to rent, then buy, and never mixes offer types in one result.
+func TestWatchProvidersFallback(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		wantType string
+		wantIDs  []int64
+	}{
+		{"rent and buy prefers rent",
+			`{"results":{"US":{"rent":[{"provider_id":2,"provider_name":"Apple TV","logo_path":"/a.jpg"},{"provider_id":10,"provider_name":"Amazon Video","logo_path":"/b.jpg"}],"buy":[{"provider_id":3,"provider_name":"Google Play","logo_path":"/c.jpg"}]}}}`,
+			OfferRent, []int64{2, 10}},
+		{"empty flatrate falls back",
+			`{"results":{"US":{"flatrate":[],"rent":[{"provider_id":2,"provider_name":"Apple TV","logo_path":""}]}}}`,
+			OfferRent, []int64{2}},
+		{"buy only",
+			`{"results":{"US":{"buy":[{"provider_id":3,"provider_name":"Google Play","logo_path":""}]}}}`,
+			OfferBuy, []int64{3}},
+		{"flatrate wins over rent",
+			`{"results":{"US":{"flatrate":[{"provider_id":8,"provider_name":"Netflix","logo_path":""}],"rent":[{"provider_id":2,"provider_name":"Apple TV","logo_path":""}]}}}`,
+			OfferStream, []int64{8}},
+		{"nothing at all",
+			`{"results":{"US":{"link":"x"}}}`,
+			"", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			got, err := NewWithBaseURL(srv.URL, "test-token").WatchProviders(context.Background(), "movie", 79, "US")
+			if err != nil {
+				t.Fatalf("WatchProviders: %v", err)
+			}
+			if got.Type != tc.wantType {
+				t.Fatalf("type = %q, want %q", got.Type, tc.wantType)
+			}
+			var ids []int64
+			for _, p := range got.Providers {
+				ids = append(ids, p.ID)
+			}
+			if len(ids) != len(tc.wantIDs) {
+				t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
+			}
+			for i := range ids {
+				if ids[i] != tc.wantIDs[i] {
+					t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
+				}
+			}
+		})
 	}
 }
 
@@ -272,7 +330,7 @@ func TestWatchProvidersRegionMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WatchProviders(ZZ): %v, want nil error (no home region is data, not failure)", err)
 	}
-	if len(got) != 0 {
+	if len(got.Providers) != 0 || got.Type != "" {
 		t.Fatalf("got %+v for absent region, want empty", got)
 	}
 }

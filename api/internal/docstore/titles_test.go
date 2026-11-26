@@ -76,7 +76,7 @@ func TestUpsertTitleInsertAndRefresh(t *testing.T) {
 	}
 
 	// Refresh preserves provider/airing stamps and data.
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 8, Name: "N"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{{ID: 8, Name: "N"}}); err != nil {
 		t.Fatalf("providers: %v", err)
 	}
 	if err := s.ReplaceFutureAirings(ctx, ti.ID, "2100-01-01", []AiringRow{{Season: 1, Episode: 1, AirDate: "2100-01-02"}}); err != nil {
@@ -162,7 +162,7 @@ func TestReplaceOnMissingTitleErrors(t *testing.T) {
 	if err := s.ReplaceSeasons(ctx, id, nil); !errors.Is(err, ErrTitleNotFound) {
 		t.Fatal("seasons: want ErrTitleNotFound")
 	}
-	if err := s.ReplaceProviders(ctx, id, "US", nil); !errors.Is(err, ErrTitleNotFound) {
+	if err := s.ReplaceProviders(ctx, id, "US", "stream", nil); !errors.Is(err, ErrTitleNotFound) {
 		t.Fatal("providers: want ErrTitleNotFound")
 	}
 	if err := s.ReplaceFutureAirings(ctx, id, "2100-01-01", nil); !errors.Is(err, ErrTitleNotFound) {
@@ -182,16 +182,16 @@ func TestReplaceProvidersRegionScoped(t *testing.T) {
 	}
 	before := ti.ProvidersRefreshedAt
 
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 9, Name: "Max", LogoPath: "/m.jpg"}, {ID: 8, Name: "Netflix", LogoPath: "/n.jpg"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{{ID: 9, Name: "Max", LogoPath: "/m.jpg"}, {ID: 8, Name: "Netflix", LogoPath: "/n.jpg"}}); err != nil {
 		t.Fatalf("US: %v", err)
 	}
 	if got := mustTitleDoc(t, s, ti.ID).Providers["US"]; !reflect.DeepEqual(got, []int64{8, 9}) {
 		t.Fatalf("US not sorted ascending: %v", got)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "GB", []ProviderRow{{ID: 9, Name: "Max", LogoPath: "/m.jpg"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "GB", "stream", []ProviderRow{{ID: 9, Name: "Max", LogoPath: "/m.jpg"}}); err != nil {
 		t.Fatalf("GB: %v", err)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 8, Name: "Netflix Renamed", LogoPath: "/n2.jpg"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{{ID: 8, Name: "Netflix Renamed", LogoPath: "/n2.jpg"}}); err != nil {
 		t.Fatalf("US re-replace: %v", err)
 	}
 	d := mustTitleDoc(t, s, ti.ID)
@@ -210,7 +210,7 @@ func TestReplaceProvidersRegionScoped(t *testing.T) {
 		t.Fatalf("provider doc = %+v, %v", p, err)
 	}
 
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 10, Name: "Dup"}, {ID: 10, Name: "Dup"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{{ID: 10, Name: "Dup"}, {ID: 10, Name: "Dup"}}); err != nil {
 		t.Fatalf("duplicate provider ids: %v", err)
 	}
 	if got := mustTitleDoc(t, s, ti.ID).Providers["US"]; !reflect.DeepEqual(got, []int64{10}) {
@@ -225,10 +225,10 @@ func TestReplaceProvidersKeepsProviderDictionary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{{ID: 500, Name: "P500", LogoPath: "/p.jpg"}}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{{ID: 500, Name: "P500", LogoPath: "/p.jpg"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReplaceProviders(ctx, ti.ID, "US", []ProviderRow{}); err != nil {
+	if err := s.ReplaceProviders(ctx, ti.ID, "US", "stream", []ProviderRow{}); err != nil {
 		t.Fatal(err)
 	}
 	snap, err := s.c.Doc("providers/500").Get(ctx)

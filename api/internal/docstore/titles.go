@@ -3,11 +3,14 @@ package docstore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"time"
 
 	"cloud.google.com/go/firestore"
+
+	"github.com/shottah/lineup/api/internal/guide"
 )
 
 // Title mirrors one titles/{kind}-{tmdbId} document. The refresh stamps
@@ -26,6 +29,11 @@ type Title struct {
 	RefreshedAt          time.Time `json:"-"`
 	ProvidersRefreshedAt time.Time `json:"-"`
 	AiringsRefreshedAt   time.Time `json:"-"`
+	// ProviderOffers is region -> offer type of that region's providers
+	// ("stream" | "rent" | "buy", "" when the region has none). A region
+	// missing from the map was never fetched with offer data (docs ingested
+	// before offers existed held flatrate only); ingest treats it as stale.
+	ProviderOffers map[string]string `json:"-"`
 }
 
 // TitleUpsert carries the metadata class of a title write.
@@ -82,6 +90,22 @@ type titleDoc struct {
 	Seasons              map[string]int     `firestore:"seasons"`
 	Airings              []airing           `firestore:"airings"`
 	Providers            map[string][]int64 `firestore:"providers"`
+	// ProviderOffers is region -> offer type for Providers[region]; see
+	// Title.ProviderOffers.
+	ProviderOffers map[string]string `firestore:"providerOffers"`
+}
+
+// offer returns the region's offer type. Docs written before offers were
+// recorded held TMDB flatrate data only, so a missing entry with providers
+// present reads as "stream".
+func (d *titleDoc) offer(region string) string {
+	if o, ok := d.ProviderOffers[region]; ok {
+		return o
+	}
+	if len(d.Providers[region]) > 0 {
+		return guide.OfferStream
+	}
+	return ""
 }
 
 func (d *titleDoc) title(id string) *Title {
@@ -90,6 +114,7 @@ func (d *titleDoc) title(id string) *Title {
 		Overview: d.Overview, PosterPath: d.PosterPath, RuntimeMinutes: d.RuntimeMinutes,
 		Airing: d.Airing, RefreshedAt: d.RefreshedAt,
 		ProvidersRefreshedAt: d.ProvidersRefreshedAt, AiringsRefreshedAt: d.AiringsRefreshedAt,
+		ProviderOffers: maps.Clone(d.ProviderOffers),
 	}
 }
 
@@ -252,10 +277,11 @@ func (s *Store) ReplaceSeasons(ctx context.Context, titleID string, seasons []Se
 }
 
 // ReplaceProviders upserts the provider dictionary and replaces the title's
-// availability for one region (IDs sorted ascending), stamping
+// availability for one region (IDs sorted ascending) along with its offer
+// type ("stream" | "rent" | "buy", "" for none), stamping
 // providersRefreshedAt. Other regions are untouched; the dictionary is
 // append-only.
-func (s *Store) ReplaceProviders(ctx context.Context, titleID, region string, provs []ProviderRow) error {
+func (s *Store) ReplaceProviders(ctx context.Context, titleID, region, offer string, provs []ProviderRow) error {
 	dict := map[int64]ProviderRow{}
 	for _, p := range provs {
 		dict[p.ID] = p
@@ -280,8 +306,14 @@ func (s *Store) ReplaceProviders(ctx context.Context, titleID, region string, pr
 				all = map[string][]int64{}
 			}
 			all[region] = ids
+			offers := d.ProviderOffers
+			if offers == nil {
+				offers = map[string]string{}
+			}
+			offers[region] = offer
 			return []firestore.Update{
 				{Path: "providers", Value: all},
+				{Path: "providerOffers", Value: offers},
 				{Path: "providersRefreshedAt", Value: now()},
 			}, nil
 		})
@@ -325,7 +357,10 @@ type TitleFull struct {
 	Title     Title         `json:"title"`
 	Seasons   []SeasonRow   `json:"seasons"`
 	Providers []ProviderRow `json:"providers"`
-	Entry     *Entry        `json:"entry"`
+	// Offer is the providers' offer type in the region ("stream" | "rent"
+	// | "buy"), "" when there are none.
+	Offer string `json:"offer"`
+	Entry *Entry `json:"entry"`
 }
 
 // GetTitleFull assembles the title-page payload: title, seasons, the
@@ -344,7 +379,8 @@ func (s *Store) GetTitleFull(ctx context.Context, userID, titleID, region string
 	if td == nil {
 		return nil, ErrTitleNotFound
 	}
-	full := &TitleFull{Title: *td.title(titleID), Seasons: seasonRows(td.Seasons), Providers: []ProviderRow{}}
+	full := &TitleFull{Title: *td.title(titleID), Seasons: seasonRows(td.Seasons), Providers: []ProviderRow{},
+		Offer: td.offer(region)}
 
 	if pids := td.Providers[region]; len(pids) > 0 {
 		refs := make([]*firestore.DocumentRef, len(pids))

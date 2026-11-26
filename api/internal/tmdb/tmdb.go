@@ -275,12 +275,33 @@ type Provider struct {
 	LogoPath string
 }
 
+// Offer types, in preference order. The strings match guide.Offer*.
+const (
+	OfferStream = "stream" // TMDB "flatrate": included with a subscription
+	OfferRent   = "rent"
+	OfferBuy    = "buy"
+)
+
+// WatchOffer is one region's providers for a title, all of a single offer
+// type. Type is "" (and Providers empty) when the region has no offers.
+type WatchOffer struct {
+	Type      string
+	Providers []Provider
+}
+
+type tmdbProvider struct {
+	ProviderID int64  `json:"provider_id"`
+	Name       string `json:"provider_name"`
+	LogoPath   string `json:"logo_path"`
+}
+
 // WatchProviders fetches GET /3/{movie|tv}/{id}/watch/providers and
-// returns the region's flatrate (streaming) entries only — rent/buy are
-// ignored. kind is Lineup's "movie"|"series". A region TMDB doesn't list,
-// or one without flatrate offers, yields an empty slice: a title having
-// no streaming home somewhere is data, not failure.
-func (c *Client) WatchProviders(ctx context.Context, kind string, id int64, region string) ([]Provider, error) {
+// returns the region's best offer type: flatrate (streaming) when it has
+// any, else rent, else buy. Types are never mixed in one result. kind is
+// Lineup's "movie"|"series". A region TMDB doesn't list, or one with no
+// offers at all, yields an empty WatchOffer: a title having no home
+// somewhere is data, not failure.
+func (c *Client) WatchProviders(ctx context.Context, kind string, id int64, region string) (WatchOffer, error) {
 	var segment string
 	switch kind {
 	case "movie":
@@ -288,24 +309,32 @@ func (c *Client) WatchProviders(ctx context.Context, kind string, id int64, regi
 	case "series":
 		segment = "tv"
 	default:
-		return nil, fmt.Errorf("tmdb: watch providers: unknown kind %q", kind)
+		return WatchOffer{}, fmt.Errorf("tmdb: watch providers: unknown kind %q", kind)
 	}
 	var resp struct {
 		Results map[string]struct {
-			Flatrate []struct {
-				ProviderID int64  `json:"provider_id"`
-				Name       string `json:"provider_name"`
-				LogoPath   string `json:"logo_path"`
-			} `json:"flatrate"`
+			Flatrate []tmdbProvider `json:"flatrate"`
+			Rent     []tmdbProvider `json:"rent"`
+			Buy      []tmdbProvider `json:"buy"`
 		} `json:"results"`
 	}
 	path := "/3/" + segment + "/" + strconv.FormatInt(id, 10) + "/watch/providers"
 	if err := c.get(ctx, path, &resp); err != nil {
-		return nil, err
+		return WatchOffer{}, err
 	}
-	out := []Provider{}
-	for _, p := range resp.Results[region].Flatrate {
-		out = append(out, Provider{ID: p.ProviderID, Name: p.Name, LogoPath: p.LogoPath})
+	r := resp.Results[region]
+	for _, o := range []struct {
+		typ  string
+		list []tmdbProvider
+	}{{OfferStream, r.Flatrate}, {OfferRent, r.Rent}, {OfferBuy, r.Buy}} {
+		if len(o.list) == 0 {
+			continue
+		}
+		out := WatchOffer{Type: o.typ, Providers: make([]Provider, 0, len(o.list))}
+		for _, p := range o.list {
+			out.Providers = append(out.Providers, Provider{ID: p.ProviderID, Name: p.Name, LogoPath: p.LogoPath})
+		}
+		return out, nil
 	}
-	return out, nil
+	return WatchOffer{Providers: []Provider{}}, nil
 }
